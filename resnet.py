@@ -25,7 +25,7 @@ class BasicBlock(nn.Module):
         identity = x
 
         out = self.conv1(x)
-        out = self.bn1(x)
+        out = self.bn1(out)
         out = torch.relu(out)
 
         out = self.conv2(out)
