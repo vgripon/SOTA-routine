@@ -71,8 +71,8 @@ if args.dataset.lower() == "cifar10" or args.dataset.lower() == "cifar100":
         transform = transforms.Compose([
             transforms.RandomHorizontalFlip(),
             transforms.RandomCrop(32, padding=4),
-            torchvision.transforms.AutoAugment(policy=torchvision.transforms.autoaugment.AutoAugmentPolicy.CIFAR10),
-#            transforms.TrivialAugmentWide(),
+#            torchvision.transforms.AutoAugment(policy=torchvision.transforms.autoaugment.AutoAugmentPolicy.CIFAR10),
+            transforms.TrivialAugmentWide(),
             transforms.ToTensor(),
             normalize,
             transforms.Resize(54, antialias=True),
@@ -161,7 +161,7 @@ for era in range(1):
             scheduler = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor = 0.2, total_iters = len(train_loader) * 5)
         elif epoch == 0:
             optimizer = torch.optim.SGD([{"params":wd, "weight_decay":2e-5}, {"params":nowd, "weight_decay":0}], lr=0.5, momentum=0.9, nesterov=True)
-            optimizer = torch.optim.AdamW([{"params":wd, "weight_decay":0.01}, {"params":nowd, "weight_decay":0}])
+            optimizer = torch.optim.AdamW([{"params":wd, "weight_decay":0.05}, {"params":nowd, "weight_decay":0}])
             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.steps - step)
         for batch_idx, (inputs, targets) in enumerate(train_loader):
             step += 1

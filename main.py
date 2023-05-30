@@ -71,8 +71,8 @@ if args.dataset.lower() == "cifar10" or args.dataset.lower() == "cifar100":
         transform = transforms.Compose([
             transforms.RandomHorizontalFlip(),
             transforms.RandomCrop(32, padding=4),
-            torchvision.transforms.AutoAugment(policy=torchvision.transforms.autoaugment.AutoAugmentPolicy.CIFAR10),
-#            transforms.TrivialAugmentWide(),
+#            torchvision.transforms.AutoAugment(policy=torchvision.transforms.autoaugment.AutoAugmentPolicy.CIFAR10),
+            transforms.TrivialAugmentWide(),
             transforms.ToTensor(),
             normalize,
             transforms.Resize(54, antialias=True),
