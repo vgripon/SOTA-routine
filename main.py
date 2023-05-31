@@ -28,7 +28,6 @@ parser.add_argument('--width', type=int, default=64, help="number of feature map
 parser.add_argument('--dataset-path', type=str, default=os.getenv("DATASETS"))
 
 parser.add_argument('--label-smoothing', type=float, default=0.1)
-parser.add_argument('--no-mixup', action="store_true")
 parser.add_argument('--no-cutmix', action="store_true")
 args = parser.parse_args()
 
@@ -167,13 +166,12 @@ for era in range(1):
             inputs, targets = inputs.to(args.device), targets.to(args.device)
 
             perm = torch.randperm(inputs.shape[0]) # for mixup
-
-            if not args.no_mixup:
-                alpha = torch.rand(inputs.shape[0]).to(args.device)
-                inputs = alpha.reshape(-1,1,1,1) * inputs + (1 - alpha.reshape(-1,1,1,1)) * inputs[perm] # mixing up the inputs
+            # alpha = torch.rand(inputs.shape[0]).to(args.device)
+            alpha = np.random.beta(0.2, 0.2)
+            inputs = alpha * inputs + (1 - alpha) * inputs[perm] # mixing up the inputs
 
             if not args.no_cutmix:
-                lam = random.random()  # cutmix
+                lam = np.random.beta(1, 1)  # cutmix
                 rand_index = torch.randperm(inputs.size()[0]).to(args.device) # cutmix perm
                 bbx1, bby1, bbx2, bby2 = rand_bbox(inputs.size(), lam)
                 inputs[:, :, bbx1:bbx2, bby1:bby2] = inputs[rand_index, :, bbx1:bbx2, bby1:bby2]
