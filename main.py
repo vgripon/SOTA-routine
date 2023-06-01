@@ -26,9 +26,10 @@ parser.add_argument('--seed', type = int, default = random.randint(0, 1000000000
 parser.add_argument('--model', type=str, default="resnet50")
 parser.add_argument('--width', type=int, default=64, help="number of feature maps for first layers")
 parser.add_argument('--dataset-path', type=str, default=os.getenv("DATASETS"))
-
+parser.add_argument('--cifar-resize', type=int, default=32)
 parser.add_argument('--label-smoothing', type=float, default=0.1)
 parser.add_argument('--no-cutmix', action="store_true")
+parser.add_argument('--adam', action="store_true")
 args = parser.parse_args()
 
 torch.manual_seed(args.seed)
@@ -74,7 +75,7 @@ if args.dataset.lower() == "cifar10" or args.dataset.lower() == "cifar100":
             transforms.TrivialAugmentWide(),
             transforms.ToTensor(),
             normalize,
-            transforms.Resize(54, antialias=True),
+            transforms.Resize(args.cifar_resize, antialias=True),
             transforms.RandomErasing(0.1)
         ]))
     test = tvdset(
@@ -83,7 +84,7 @@ if args.dataset.lower() == "cifar10" or args.dataset.lower() == "cifar100":
         transform = transforms.Compose([
             transforms.ToTensor(),
             normalize,
-            transforms.Resize(54, antialias=True)
+            transforms.Resize(args.cifar_resize, antialias=True)
         ]))
     large_input = False
 
@@ -96,20 +97,29 @@ test_loader = torch.utils.data.DataLoader(
         num_workers=30)
 
 net = eval(args.model)(num_classes, large_input, args.width).to(args.device)
-print("{:d} parameters".format(int(torch.tensor([x.numel() for x in net.parameters()]).sum().item())))
+num_parameters = int(torch.tensor([x.numel() for x in net.parameters()]).sum().item())
+print("{:d} parameters".format(num_parameters))
 
 criterion = nn.CrossEntropyLoss(reduction = 'none', label_smoothing=args.label_smoothing)
 
 modules = [x for x in net.modules()]
 wd = []
 nowd = []
+trained_parameters = 0
 for x in modules:
     if isinstance(x, nn.BatchNorm2d) or isinstance(x, nn.Linear):
         if isinstance(x, nn.BatchNorm2d):
             nowd.append(x.weight)
+            trained_parameters += x.weight.numel()
+        else:
+            wd.append(x.weight)
+            trained_parameters += x.weight.numel()
         nowd.append(x.bias)
-    elif isinstance(x, nn.Conv2d) or isinstance(x, nn.Linear):
+        trained_parameters += x.bias.numel()
+    elif isinstance(x, nn.Conv2d):
         wd.append(x.weight)
+        trained_parameters += x.weight.numel()
+assert(num_parameters == trained_parameters)
 
 train_losses = []
 test_scores = []
@@ -155,20 +165,24 @@ index_test = 0
 for era in range(1):
     while step < args.steps:
         net.train()
-        if epoch == 0:
+        if epoch == 0 and not(args.adam):
             optimizer = torch.optim.SGD([{"params":wd, "weight_decay":2e-5}, {"params":nowd, "weight_decay":0}], lr=0.5, momentum=0.9, nesterov=True)
             scheduler = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor = 0.2, total_iters = len(train_loader) * 5)
-        elif epoch == 5:
-            optimizer = torch.optim.SGD([{"params":wd, "weight_decay":2e-5}, {"params":nowd, "weight_decay":0}], lr=0.5, momentum=0.9, nesterov=True)
+        elif epoch == 5 or (epoch == 0 and args.adam):
+            if args.adam:
+                optimizer = torch.optim.AdamW([{"params":wd, "weight_decay":0.05}, {"params":nowd, "weight_decay":0}])
+            else:
+                optimizer = torch.optim.SGD([{"params":wd, "weight_decay":2e-5}, {"params":nowd, "weight_decay":0}], lr=0.5, momentum=0.9, nesterov=True)
             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.steps - step)
         for batch_idx, (inputs, targets) in enumerate(train_loader):
             step += 1
             inputs, targets = inputs.to(args.device), targets.to(args.device)
 
             perm = torch.randperm(inputs.shape[0]) # for mixup
-            # alpha = torch.rand(inputs.shape[0]).to(args.device)
+            #alpha = torch.rand(inputs.shape[0]).to(args.device)
             alpha = np.random.beta(0.2, 0.2)
             inputs = alpha * inputs + (1 - alpha) * inputs[perm] # mixing up the inputs
+            #inputs = alpha.reshape(-1,1,1,1) * inputs + (1 - alpha.reshape(-1,1,1,1)) * inputs[perm]
 
             if not args.no_cutmix:
                 lam = np.random.beta(1, 1)  # cutmix
