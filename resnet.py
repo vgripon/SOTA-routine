@@ -106,7 +106,7 @@ class ResNet(nn.Module):
         else:
             self.layer4 = nn.Identity()
             self.fc = nn.Linear(width*4 * block.expansion, num_classes)
-        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+        #self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -165,7 +165,7 @@ class ResNet(nn.Module):
         x = self.layer3(x)
         x = self.layer4(x)
 
-        x = self.avgpool(x)
+        x = x.mean(-1).mean(-1)
         x = torch.flatten(x, 1)
         x = self.fc(x)
 
