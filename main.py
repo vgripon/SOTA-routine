@@ -29,7 +29,7 @@ parser.add_argument('--width', type=int, default=64, help="number of feature map
 parser.add_argument('--dataset-path', type=str, default=os.getenv("DATASETS"))
 parser.add_argument('--cifar-resize', type=int, default=32)
 parser.add_argument('--label-smoothing', type=float, default=0.1)
-parser.add_argument('--no-cutmix', action="store_true")
+# parser.add_argument('--no-cutmix', action="store_true")
 parser.add_argument('--adam', action="store_true")
 args = parser.parse_args()
 
@@ -193,26 +193,26 @@ for era in range(1):
             step += 1
             inputs, targets = inputs.to(args.device), targets.to(args.device)
 
-            perm = torch.randperm(inputs.shape[0]) # for mixup
-            #alpha = torch.rand(inputs.shape[0]).to(args.device)
-            alpha = np.random.beta(0.2, 0.2)
-            inputs = alpha * inputs + (1 - alpha) * inputs[perm] # mixing up the inputs
-            #inputs = alpha.reshape(-1,1,1,1) * inputs + (1 - alpha.reshape(-1,1,1,1)) * inputs[perm]
+            choice = random.randint(0,1)
 
-            if not args.no_cutmix:
-                lam = np.random.beta(1, 1)  # cutmix
-                rand_index = torch.randperm(inputs.size()[0]).to(args.device) # cutmix perm
-                bbx1, bby1, bbx2, bby2 = rand_bbox(inputs.size(), lam)
-                inputs[:, :, bbx1:bbx2, bby1:bby2] = inputs[rand_index, :, bbx1:bbx2, bby1:bby2]
-                lam = 1 - ((bbx2 - bbx1) * (bby2 - bby1) / (inputs.size()[-1] * inputs.size()[-2]))
+            if choice == 0:
+                perm = torch.randperm(inputs.shape[0]) # for mixup
+                #alpha = torch.rand(inputs.shape[0]).to(args.device)
+                alpha = np.random.beta(0.2, 0.2)
+                inputs = alpha * inputs + (1 - alpha) * inputs[perm] # mixing up the inputs
+                #inputs = alpha.reshape(-1,1,1,1) * inputs + (1 - alpha.reshape(-1,1,1,1)) * inputs[perm]
+
+            else:
+                alpha = np.random.beta(1, 1)  # cutmix
+                perm = torch.randperm(inputs.size()[0]).to(args.device) # cutmix perm
+                bbx1, bby1, bbx2, bby2 = rand_bbox(inputs.size(), alpha)
+                inputs[:, :, bbx1:bbx2, bby1:bby2] = inputs[perm, :, bbx1:bbx2, bby1:bby2]
+                alpha = 1 - ((bbx2 - bbx1) * (bby2 - bby1) / (inputs.size()[-1] * inputs.size()[-2]))
             
             optimizer.zero_grad()
             outputs = net(inputs) # computing softmax output
 
-            if not args.no_cutmix:
-                loss = (alpha * lam * criterion(outputs, targets) + lam * (1 - alpha) * criterion(outputs, targets[perm]) + (1 - lam) * alpha * criterion(outputs, targets[rand_index]) + (1 - alpha) * (1 - lam) * criterion(outputs, targets[perm][rand_index])).mean()
-            else:
-                loss = (alpha * criterion(outputs, targets) + (1 - alpha) * criterion(outputs, targets[perm])).mean()
+            loss = (alpha * criterion(outputs, targets) + (1 - alpha) * criterion(outputs, targets[perm])).mean()
 
             loss.backward()
             optimizer.step()
