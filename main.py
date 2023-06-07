@@ -1,6 +1,12 @@
 """Basic script to train CIFAR10 and ImageNet close to SOTA with ResNets"""
 
-"""5h CIFAR10 32x32 97.78%: python main.py --model resnet18 --batch-size 128 --seed 0"""
+"""
+5h CIFAR10 32x32 97.78%: python main.py --model resnet18 --batch-size 128 --seed 0
+10h CIFAR10 52x52 98.00%: python main.py --model resnet18 --batch-size 128 --seed 0 --cifar-resize 52
+6h CIFAR10 32x32 96.64%: python main.py --model resnet56 --batch-size 128 --seed 0 --width 16
+10h CIFAR10 32x32 98.03%: python main.py --model resnet50 --batch-size 128 --seed 0
+4h CIFAR10 32x32 94.76%: python main.py --model resnet20 --batch-size 128 --seed 0
+"""
 
 import torch
 import torch.nn as nn
@@ -254,7 +260,7 @@ for era in range(1):
                 net.train()
         epoch += 1
 
-total_time = (time.time() - start_time) / (args.steps * era + step)
+total_time = time.time() - start_time
 print()
 print("total time is {:4d}h{:02d}m".format(int(total_time / 3600), (int(total_time) % 3600) // 60))
 print()
