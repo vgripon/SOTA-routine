@@ -6,6 +6,7 @@
 6h CIFAR10 32x32 96.64%: python main.py --model resnet56 --batch-size 128 --seed 0 --width 16
 10h CIFAR10 32x32 98.03%: python main.py --model resnet50 --batch-size 128 --seed 0
 4h CIFAR10 32x32 94.76%: python main.py --model resnet20 --batch-size 128 --seed 0
+84h CIFAR100 52x52 78.33%: python main.py --model resnet18 --seed 0 --dataset cifar100 --cifar-resize 52
 """
 
 import torch
@@ -111,9 +112,9 @@ print("{:d} parameters".format(num_parameters))
 
 ema = EMA(
     net,
-    beta = 0.9998,              # exponential moving average factor
-    update_after_step = (args.steps * 9) // 10,
-    update_every = 1,          # how often to actually update, to save on compute (updates every 10th .update() call)
+    beta = 0.9,              # exponential moving average factor
+    # #update_after_step = (args.steps * 9) // 10,
+    update_every = 10,          # how often to actually update, to save on compute (updates every 10th .update() call)
 )
 
 criterion = nn.CrossEntropyLoss(reduction = 'none', label_smoothing=args.label_smoothing)
