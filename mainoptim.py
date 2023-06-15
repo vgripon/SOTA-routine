@@ -25,13 +25,13 @@ from accelerate import Accelerator
 
 from resnet import *
 
-from imagenetimplem_cutmix_mixup import RandomMixup, RandomCutmix
+from imagenet_implem_cutmix_mixup import RandomMixup, RandomCutmix
 from torch.utils.data.dataloader import default_collate
 
 accelerator = Accelerator()
 
 parser = argparse.ArgumentParser(description="Vincent's Training Routine")
-parser.add_argument('--device', type=str, default="cuda:0")
+#parser.add_argument('--device', type=str, default="cuda:0")
 parser.add_argument('--dataset', type=str, default="CIFAR10", help="CIFAR10, CIFAR100 or ImageNet")
 parser.add_argument('--steps', type=int, default=750000)
 parser.add_argument('--batch-size', type = int, default=1024)
@@ -120,7 +120,9 @@ test_loader = torch.utils.data.DataLoader(
         test, batch_size=args.batch_size, shuffle=False,
         num_workers=min(30, os.cpu_count()), pin_memory=True)
 
-net = eval(args.model)(num_classes, large_input, args.width).to(args.device, non_blocking=True, memory_format=torch.channels_last)
+net = eval(args.model)(num_classes, large_input, args.width)
+net, train_loader, test_loader = accelerator.prepare(net, train_loader, test_loader)
+net.to(non_blocking=True, memory_format=torch.channels_last)
 num_parameters = int(torch.tensor([x.numel() for x in net.parameters()]).sum().item())
 accelerator.print("{:d} parameters".format(num_parameters))
 
@@ -166,7 +168,7 @@ def test():
     correct_ema = 0
     with torch.no_grad():
         for batch_idx, (inputs, targets) in enumerate(test_loader):
-            inputs, targets = inputs.to(args.device, non_blocking=True, memory_format=torch.channels_last), targets.to(args.device, non_blocking=True)
+            inputs, targets = inputs.to(non_blocking=True, memory_format=torch.channels_last), targets.to(non_blocking=True)
             outputs = net(inputs)
             outputs_ema = ema(inputs)
             _, predicted = outputs.max(1)
@@ -186,18 +188,22 @@ for era in range(1):
         if epoch == 0 and not(args.adam):
             optimizer = torch.optim.SGD([{"params":wd, "weight_decay":2e-5}, {"params":nowd, "weight_decay":0}], lr=0.5, momentum=0.9, nesterov=True)
             scheduler = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor = 0.2, total_iters = len(train_loader) * 5)
+            optimizer, scheduler = accelerator.prepare(optimizer, scheduler)
         elif epoch == 5 or (epoch == 0 and args.adam):
             if args.adam:
                 optimizer = torch.optim.AdamW([{"params":wd, "weight_decay":0.05}, {"params":nowd, "weight_decay":0}])
             else:
                 optimizer = torch.optim.SGD([{"params":wd, "weight_decay":2e-5}, {"params":nowd, "weight_decay":0}], lr=0.5, momentum=0.9, nesterov=True)
             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.steps - step)
-        net, optimizer, scheduler, train_loader, test_loader = accelerator.prepare(net, optimizer, scheduler, train_loader, test_loader)
+            
+            optimizer, scheduler = accelerator.prepare(optimizer, scheduler)
+        
+        #net = net.to(args.device)
 
         for batch_idx, (inputs, targets) in enumerate(train_loader):
             step += 1
-            inputs, targets = inputs.to(args.device, non_blocking=True, memory_format=torch.channels_last), targets.to(args.device, non_blocking=True)
-            
+            inputs, targets = inputs.to(non_blocking=True, memory_format=torch.channels_last), targets.to(non_blocking=True)
+
             optimizer.zero_grad(set_to_none=True)
             outputs = net(inputs) # computing softmax output
 
@@ -227,7 +233,7 @@ for era in range(1):
                 except StopIteration:
                     test_enum = enumerate(test_loader)
                     _, (inputs, targets) = next(test_enum)
-                inputs, targets = inputs.to(args.device, non_blocking=True, memory_format=torch.channels_last), targets.to(args.device, non_blocking=True)
+                inputs, targets = inputs.to(non_blocking=True, memory_format=torch.channels_last), targets.to(non_blocking=True)
                 with torch.inference_mode():
                     outputs = net(inputs)
                     outputs_ema = ema(inputs)
