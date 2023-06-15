@@ -220,7 +220,8 @@ for era in range(1):
             accelerator.print("\r{:6.2f}% loss:{:.4e} lr:{:.3e}".format(100*step / args.steps, torch.mean(torch.tensor(train_losses)).item(), lr), end="")
             step_time = (time.time() - start_time) / (args.steps * era + step)
             remaining_time = (args.steps - step) * step_time
-            accelerator.print(" {:6.2f}% (ema {:6.2f}%) {:4d}h{:02d}m {:d} epochs".format(100 * torch.tensor(test_scores).sum() / torch.tensor(test_card).sum(), 100 * torch.tensor(test_scores_ema).sum() / torch.tensor(test_card).sum(), int(remaining_time / 3600), (int(remaining_time) % 3600) // 60, epoch), end='')
+            if accelerator.is_main_process:
+                accelerator.print(" {:6.2f}% (ema {:6.2f}%) {:4d}h{:02d}m {:d} epochs".format(100 * accelerator.gather_for_metrics(torch.tensor(test_scores)).sum() / accelerator.gather_for_metrics(torch.tensor(test_card)).sum(), 100 * accelerator.gather_for_metrics(torch.tensor(test_scores_ema)).sum() / accelerator.gather_for_metrics(torch.tensor(test_card)).sum(), int(remaining_time / 3600), (int(remaining_time) % 3600) // 60, epoch), end='')
 
             if step == args.steps:
                 break
