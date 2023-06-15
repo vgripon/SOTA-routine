@@ -112,9 +112,10 @@ print("{:d} parameters".format(num_parameters))
 
 ema = EMA(
     net,
-    beta = 0.9,              # exponential moving average factor
-    # #update_after_step = (args.steps * 9) // 10,
-    update_every = 10,          # how often to actually update, to save on compute (updates every 10th .update() call)
+    #    beta=0.9999,              # exponential moving average factor
+    #    power=0.66, #0.75,
+    # update_after_step = (args.steps * 9) // 10,
+    #    update_every=1,          # how often to actually update, to save on compute (updates every 10th .update() call)
 )
 
 criterion = nn.CrossEntropyLoss(reduction = 'none', label_smoothing=args.label_smoothing)
