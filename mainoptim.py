@@ -1,12 +1,14 @@
 """Basic script to train CIFAR10 and ImageNet close to SOTA with ResNets"""
 
 """
-5h CIFAR10 32x32 97.78%: python main.py --model resnet18 --batch-size 128 --seed 0
-10h CIFAR10 52x52 98.00%: python main.py --model resnet18 --batch-size 128 --seed 0 --cifar-resize 52
-6h CIFAR10 32x32 96.64%: python main.py --model resnet56 --batch-size 128 --seed 0 --width 16
-10h CIFAR10 32x32 98.03%: python main.py --model resnet50 --batch-size 128 --seed 0
-4h CIFAR10 32x32 94.76%: python main.py --model resnet20 --batch-size 128 --seed 0
-84h CIFAR100 52x52 78.33%: python main.py --model resnet18 --seed 0 --dataset cifar100 --cifar-resize 52
+CIFAR10
+3h09 97.90% 52x52: accelerate launch --mixed_precision fp16 mainoptim.py --model resnet18 --batch-size 128 --cifar-resize 52 --seed 0
+2h12 97.40% 32x32: accelerate launch --mixed_precision fp16 mainoptim.py --model resnet18 --batch-size 128 --seed 0
+10h04 98.18% 52x52: accelerate launch --mixed_precision fp16 mainoptim.py --model resnet50 --batch-size 128 --cifar-resize 52 --seed 0
+
+5h09 98.13% 32x32 resnet56
+3h19 97.96% 52x52 resnet20
+2h18 97.73% 32x32 resnet20
 """
 
 import torch
@@ -51,7 +53,7 @@ random.seed(args.seed)
 torch.manual_seed(args.seed)
 np.random.seed(args.seed)
 torch.use_deterministic_algorithms(True)
-torch.backends.cudnn.benchmark = True
+#torch.backends.cudnn.benchmark = True
 print("random seed is", args.seed)
 
 normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
@@ -258,3 +260,4 @@ accelerator.print()
 test()
 accelerator.print()
 accelerator.print()
+
