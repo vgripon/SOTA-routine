@@ -5,10 +5,15 @@ CIFAR10
 3h09 97.90% 52x52: accelerate launch --mixed_precision fp16 mainoptim.py --model resnet18 --batch-size 128 --cifar-resize 52 --seed 0
 2h12 97.40% 32x32: accelerate launch --mixed_precision fp16 mainoptim.py --model resnet18 --batch-size 128 --seed 0
 10h04 98.18% 52x52: accelerate launch --mixed_precision fp16 mainoptim.py --model resnet50 --batch-size 128 --cifar-resize 52 --seed 0
-
+5h17 97.92% 32x32 resnet50
+9h24 98.17% 52x52 resnet56
 5h09 98.13% 32x32 resnet56
 3h19 97.96% 52x52 resnet20
 2h18 97.73% 32x32 resnet20
+REDUCED
+94.55% 32x32 resnet20 width 16 272k params
+
+
 """
 
 import torch
@@ -22,12 +27,11 @@ import random
 import time
 import math
 import numpy as np
-from ema_pytorch import EMA
 from accelerate import Accelerator
 
 from resnet import *
 
-from imagenet_implem_cutmix_mixup import RandomMixup, RandomCutmix
+from utils import ExponentialMovingAverage, RandomMixup, RandomCutmix
 from torch.utils.data.dataloader import default_collate
 
 accelerator = Accelerator()
@@ -128,13 +132,15 @@ net.to(non_blocking=True, memory_format=torch.channels_last)
 num_parameters = int(torch.tensor([x.numel() for x in net.parameters()]).sum().item())
 accelerator.print("{:d} parameters".format(num_parameters))
 
-ema = EMA(
-    net,
+ema = ExponentialMovingAverage(net, decay=0.999)
+ema = accelerator.prepare(ema)
+#ema = EMA(
+#    net,
     #    beta=0.9999,              # exponential moving average factor
     #    power=0.66, #0.75,
     # update_after_step = (args.steps * 9) // 10,
     #    update_every=1,          # how often to actually update, to save on compute (updates every 10th .update() call)
-)
+#)
 
 criterion = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
 
@@ -213,7 +219,8 @@ for era in range(1):
 
             accelerator.backward(loss)
             optimizer.step()
-            ema.update()
+            if step % 32 == 0:
+                ema.update_parameters(net)
             train_losses.append(loss.item())
             train_losses = train_losses[-len(train_loader):]
 
