@@ -134,6 +134,7 @@ accelerator.print("{:d} parameters".format(num_parameters))
 
 ema = ExponentialMovingAverage(net, decay=0.999)
 ema = accelerator.prepare(ema)
+ema.eval()
 #ema = EMA(
 #    net,
     #    beta=0.9999,              # exponential moving average factor
@@ -221,6 +222,8 @@ for era in range(1):
             optimizer.step()
             if step % 32 == 0:
                 ema.update_parameters(net)
+                if epoch < 5:
+                    ema.n_averaged.fill_(0)
             train_losses.append(loss.item())
             train_losses = train_losses[-len(train_loader):]
 
