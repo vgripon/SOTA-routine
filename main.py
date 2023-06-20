@@ -2,6 +2,26 @@
 
 """
 CIFAR10
+accelerate launch --mixed_precision fp16 main.py --model $model --cifar-resize $size --batch-size 128 --seed 0
+model     |         32         |         52         |
+resnet20  | 98.05% ( 90% 2h30) | 
+resnet56  |
+resnet18  |
+resnet50  |
+
+CIFAR100
+accelerate launch --mixed_precision fp16 main.py --model $model --dataset cifar100 --cifar-resize $size --batch-size 128 --seed 0
+model     |         32         |         52         |
+resnet20  | 83.97% ( 90% 2h32) | 
+resnet56  |
+resnet18  |
+resnet50  |
+
+ImageNet
+accelerate launch --mixed_precision fp16 main.py --model $model --dataset imagenet --seed 0
+resnet18
+resnet50
+
 3h09 97.90% 52x52: accelerate launch --mixed_precision fp16 mainoptim.py --model resnet18 --batch-size 128 --cifar-resize 52 --seed 0
 2h12 97.40% 32x32: accelerate launch --mixed_precision fp16 mainoptim.py --model resnet18 --batch-size 128 --seed 0
 10h04 98.18% 52x52: accelerate launch --mixed_precision fp16 mainoptim.py --model resnet50 --batch-size 128 --cifar-resize 52 --seed 0
@@ -37,7 +57,6 @@ from torch.utils.data.dataloader import default_collate
 accelerator = Accelerator()
 
 parser = argparse.ArgumentParser(description="Vincent's Training Routine")
-#parser.add_argument('--device', type=str, default="cuda:0")
 parser.add_argument('--dataset', type=str, default="CIFAR10", help="CIFAR10, CIFAR100 or ImageNet")
 parser.add_argument('--steps', type=int, default=750000)
 parser.add_argument('--batch-size', type = int, default=1024)
@@ -57,7 +76,6 @@ random.seed(args.seed)
 torch.manual_seed(args.seed)
 np.random.seed(args.seed)
 torch.use_deterministic_algorithms(True)
-#torch.backends.cudnn.benchmark = True
 print("random seed is", args.seed)
 
 normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
@@ -96,11 +114,10 @@ if args.dataset.lower() == "cifar10" or args.dataset.lower() == "cifar100":
         transform = transforms.Compose([
             transforms.RandomHorizontalFlip(),
             transforms.RandomCrop(32, padding=4),
-#            torchvision.transforms.AutoAugment(policy=torchvision.transforms.autoaugment.AutoAugmentPolicy.CIFAR10),
             transforms.TrivialAugmentWide(),
             transforms.ToTensor(),
             normalize,
-            transforms.Resize(args.cifar_resize, antialias=True),#, interpolation=transforms.InterpolationMode.NEAREST),
+            transforms.Resize(args.cifar_resize, antialias=True),
             transforms.RandomErasing(0.1)
         ]))
     test = tvdset(
@@ -109,7 +126,7 @@ if args.dataset.lower() == "cifar10" or args.dataset.lower() == "cifar100":
         transform = transforms.Compose([
             transforms.ToTensor(),
             normalize,
-            transforms.Resize(args.cifar_resize, antialias=True)#, interpolation=transforms.InterpolationMode.NEAREST)
+            transforms.Resize(args.cifar_resize, antialias=True)
         ]))
     large_input = False
 
@@ -135,13 +152,6 @@ accelerator.print("{:d} parameters".format(num_parameters))
 ema = ExponentialMovingAverage(net, decay=0.999)
 ema = accelerator.prepare(ema)
 ema.eval()
-#ema = EMA(
-#    net,
-    #    beta=0.9999,              # exponential moving average factor
-    #    power=0.66, #0.75,
-    # update_after_step = (args.steps * 9) // 10,
-    #    update_every=1,          # how often to actually update, to save on compute (updates every 10th .update() call)
-#)
 
 criterion = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
 
@@ -168,6 +178,10 @@ train_losses = []
 test_scores = []
 test_scores_ema = []
 test_card = []
+peak = 0
+peak_step = 0
+peak_ema = 0
+peak_step_ema = 0
 step = 0
 epoch = 0
 def test():
@@ -175,7 +189,7 @@ def test():
     correct = 0
     total = 0
     correct_ema = 0
-    with torch.no_grad():
+    with torch.inference_mode():
         for batch_idx, (inputs, targets) in enumerate(test_loader):
             inputs, targets = inputs.to(non_blocking=True, memory_format=torch.channels_last), targets.to(non_blocking=True)
             outputs = net(inputs)
@@ -186,6 +200,8 @@ def test():
             correct += predicted.eq(targets).sum()
             correct_ema += predicted_ema.eq(targets).sum()
     accelerator.print("{:6.2f}% (ema: {:6.2f}%)".format(100.*correct/total, 100.*correct_ema/total))
+    net.train()
+    return correct_ema/total
 
 start_time = time.time()
 
@@ -196,7 +212,7 @@ for era in range(1):
         net.train()
         if epoch == 0 and not(args.adam):
             optimizer = torch.optim.SGD([{"params":wd, "weight_decay":2e-5}, {"params":nowd, "weight_decay":0}], lr=0.5, momentum=0.9, nesterov=True)
-            scheduler = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor = 0.2, total_iters = len(train_loader) * 5)
+            scheduler = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor = 0.01, total_iters = len(train_loader) * 5)
             optimizer, scheduler = accelerator.prepare(optimizer, scheduler)
         elif epoch == 5 or (epoch == 0 and args.adam):
             if args.adam:
@@ -207,8 +223,6 @@ for era in range(1):
             
             optimizer, scheduler = accelerator.prepare(optimizer, scheduler)
         
-        #net = net.to(args.device)
-
         for batch_idx, (inputs, targets) in enumerate(train_loader):
             step += 1
             inputs, targets = inputs.to(non_blocking=True, memory_format=torch.channels_last), targets.to(non_blocking=True)
@@ -233,14 +247,21 @@ for era in range(1):
             step_time = (time.time() - start_time) / (args.steps * era + step)
             remaining_time = (args.steps - step) * step_time
             if accelerator.is_main_process:
-                accelerator.print(" {:6.2f}% (ema {:6.2f}%) {:4d}h{:02d}m {:d} epochs".format(100 * accelerator.gather_for_metrics(torch.tensor(test_scores)).sum() / accelerator.gather_for_metrics(torch.tensor(test_card)).sum(), 100 * accelerator.gather_for_metrics(torch.tensor(test_scores_ema)).sum() / accelerator.gather_for_metrics(torch.tensor(test_card)).sum(), int(remaining_time / 3600), (int(remaining_time) % 3600) // 60, epoch), end='')
+                score = 100 * accelerator.gather_for_metrics(torch.tensor(test_scores)).sum() / accelerator.gather_for_metrics(torch.tensor(test_card)).sum()
+                score_ema = 100 * accelerator.gather_for_metrics(torch.tensor(test_scores_ema)).sum() / accelerator.gather_for_metrics(torch.tensor(test_card)).sum()
+                if score > peak:
+                    peak = score
+                    peak_step = step
+                if score_ema > peak_ema:
+                    peak_ema = score_ema
+                    peak_step_ema = step
+                accelerator.print(" {:6.2f}% (ema {:6.2f}%) {:4d}h{:02d}m {:d} epochs".format(score, score_ema, int(remaining_time / 3600), (int(remaining_time) % 3600) // 60, epoch), end='')
 
             if step == args.steps:
                 break
             if batch_idx % args.test_steps == 0:
                 net.eval()
                 try:
-#                    _, (inputs, targets) = next(test_enum)
                     inputs, targets = test_enum[index_test]
                     index_test = (index_test + 1) % len(test_enum)
                 except StopIteration:
@@ -261,13 +282,15 @@ for era in range(1):
                     test_scores_ema = test_scores_ema[-len(test_enum):]
                     test_card = test_card[-len(test_enum):]
                 net.train()
+            if (step+1) % (args.steps // 10) == 0 and step > 1:
+                accelerator.print("\r{:3d}% steps score:                    ".format(round(100 * step / args.steps)), end='')
+                res = test()
         epoch += 1
 
 total_time = time.time() - start_time
 accelerator.print()
 accelerator.print("total time is {:4d}h{:02d}m".format(int(total_time / 3600), (int(total_time) % 3600) // 60))
-accelerator.print()
-test()
+accelerator.print("Peak perf is {:6.2f}% at step {:d} ({:6.2f}% at step {:d})".format(peak, peak_step, peak_ema, peak_step_ema))
 accelerator.print()
 accelerator.print()
 
