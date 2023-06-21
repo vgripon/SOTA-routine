@@ -212,7 +212,7 @@ for era in range(1 if args.adam else 0, args.eras + 1):
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.steps - step)
     optimizer, scheduler = accelerator.prepare(optimizer, scheduler)
 
-    total_steps_for_era = args.steps if era > 0 else 5*(len(train_loader) // args.batch_size)
+    total_steps_for_era = args.steps if era > 0 else 5 * len(train_loader)
     
     while step < total_steps_for_era:
         for batch_idx, (inputs, targets) in enumerate(train_loader):
@@ -235,7 +235,7 @@ for era in range(1 if args.adam else 0, args.eras + 1):
 
             scheduler.step()
             lr = scheduler.get_last_lr()[0]
-            accelerator.print("\r{:6.2f}% loss:{:.4e} lr:{:.3e}".format(100*step / total_steps_for_era, torch.mean(torch.tensor(train_losses)).item(), lr), end="")
+            accelerator.print("\r{:6.2f}% loss:{:.4e} lr:{:.3e}".format(100 * step / total_steps_for_era, torch.mean(torch.tensor(train_losses)).item(), lr), end="")
             step_time = (time.time() - start_time) / (args.steps * era + step)
             remaining_time = (args.steps - step + (args.eras - era - 1) * args.steps) * step_time
             if accelerator.is_main_process:
