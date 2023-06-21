@@ -203,11 +203,11 @@ for era in range(args.eras):
     print("era", era + 1)
     while step < args.steps:
         net.train()
-        if epoch == 0 and not(args.adam):
+        if epoch == 0 and era == 0 and not(args.adam):
             optimizer = torch.optim.SGD([{"params":wd, "weight_decay":2e-5}, {"params":nowd, "weight_decay":0}], lr=0.5 * (0.9 ** era), momentum=0.9, nesterov=True)
             scheduler = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor = 0.01, total_iters = len(train_loader) * 5)
             optimizer, scheduler = accelerator.prepare(optimizer, scheduler)
-        elif epoch == 5 or (epoch == 0 and args.adam):
+        elif (epoch == 5 and era == 0) or (step == 0 and era > 0) or (step == 0 and args.adam):
             if args.adam:
                 optimizer = torch.optim.AdamW([{"params":wd, "weight_decay":0.05}, {"params":nowd, "weight_decay":0}], lr = 1e-3 * (0.9 ** era))
             else:
