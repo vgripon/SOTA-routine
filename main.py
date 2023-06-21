@@ -63,14 +63,15 @@ parser.add_argument('--cutmix-alpha', type=float, default=1.)
 parser.add_argument('--eras', type=int, default=1)
 args = parser.parse_args()
 
+# deterministic mode for reproducibility
 random.seed(args.seed)
 torch.manual_seed(args.seed)
 np.random.seed(args.seed)
 torch.use_deterministic_algorithms(True)
 print("random seed is", args.seed)
 
+# prepare dataloaders
 normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-
 if args.dataset.lower() == "imagenet":
     train = torchvision.datasets.ImageNet(
         root=args.dataset_path,
@@ -120,9 +121,7 @@ if args.dataset.lower() == "cifar10" or args.dataset.lower() == "cifar100":
             transforms.Resize(args.cifar_resize, antialias=True)
         ]))
     large_input = False
-
 mixupcutmix = torchvision.transforms.RandomChoice([RandomMixup(num_classes, p=1.0, alpha=args.mixup_alpha), RandomCutmix(num_classes, p=1.0, alpha=args.cutmix_alpha)])
-
 def collate_fn(batch):
     return mixupcutmix(*default_collate(batch))
 
@@ -134,6 +133,7 @@ test_loader = torch.utils.data.DataLoader(
         test, batch_size=args.batch_size, shuffle=False,
         num_workers=min(30, os.cpu_count()), pin_memory=True, persistent_workers=True)
 
+# Prepare model, EMA and parameter sets
 net = eval(args.model)(num_classes, large_input, args.width)
 net, train_loader, test_loader = accelerator.prepare(net, train_loader, test_loader)
 net.to(non_blocking=True, memory_format=torch.channels_last)
@@ -143,8 +143,6 @@ accelerator.print("{:d} parameters".format(num_parameters))
 ema = ExponentialMovingAverage(net, decay=0.999)
 ema = accelerator.prepare(ema)
 ema.eval()
-
-criterion = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
 
 modules = [x for x in net.modules()]
 wd = []
@@ -165,16 +163,12 @@ for x in modules:
         trained_parameters += x.weight.numel()
 assert(num_parameters == trained_parameters)
 
-train_losses = []
-test_scores = []
-test_scores_ema = []
-test_card = []
-peak = 0
-peak_step = 0
-peak_ema = 0
-peak_step_ema = 0
-step = 0
-epoch = 0
+# define criterion and aggregators
+criterion = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
+train_losses, test_scores, test_scores_ema, test_card = [], [], [], []
+peak, peak_step, peak_ema, peak_step_ema = 0, 0, 0, 0
+
+# test function
 def test():
     net.eval()
     correct = 0
@@ -195,33 +189,36 @@ def test():
     return correct_ema/total
 
 start_time = time.time()
+epoch = 0
 
 test_enum = list(test_loader)
 index_test = 0
-for era in range(args.eras):
+
+net.train()
+
+for era in range(1 if args.adam else 0, args.eras + 1):
     step = 0
-    print("era", era + 1)
-    while step < args.steps:
-        net.train()
-        if epoch == 0 and era == 0 and not(args.adam):
+    print("{:s}".format(str(era + 1) if era > 0 else "Warming up"))
+
+    # define optimizers/schedulers
+    if era == 0:
+        optimizer = torch.optim.SGD([{"params":wd, "weight_decay":2e-5}, {"params":nowd, "weight_decay":0}], lr=0.5, momentum=0.9, nesterov=True)
+        scheduler = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor = 0.01, total_iters = len(train_loader) * 5)
+    else:
+        if args.adam:
+            optimizer = torch.optim.AdamW([{"params":wd, "weight_decay":0.05}, {"params":nowd, "weight_decay":0}], lr = 1e-3 * (0.9 ** era))
+        else:
             optimizer = torch.optim.SGD([{"params":wd, "weight_decay":2e-5}, {"params":nowd, "weight_decay":0}], lr=0.5 * (0.9 ** era), momentum=0.9, nesterov=True)
-            scheduler = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor = 0.01, total_iters = len(train_loader) * 5)
-            optimizer, scheduler = accelerator.prepare(optimizer, scheduler)
-        elif (epoch == 5 and era == 0) or (step == 0 and era > 0) or (step == 0 and args.adam):
-            if args.adam:
-                optimizer = torch.optim.AdamW([{"params":wd, "weight_decay":0.05}, {"params":nowd, "weight_decay":0}], lr = 1e-3 * (0.9 ** era))
-            else:
-                optimizer = torch.optim.SGD([{"params":wd, "weight_decay":2e-5}, {"params":nowd, "weight_decay":0}], lr=0.5 * (0.9 ** era), momentum=0.9, nesterov=True)
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.steps - step)
-            
-            optimizer, scheduler = accelerator.prepare(optimizer, scheduler)
-        
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.steps - step)
+    optimizer, scheduler = accelerator.prepare(optimizer, scheduler)
+
+    while step < args.steps:
         for batch_idx, (inputs, targets) in enumerate(train_loader):
             step += 1
             inputs, targets = inputs.to(non_blocking=True, memory_format=torch.channels_last), targets.to(non_blocking=True)
 
             optimizer.zero_grad(set_to_none=True)
-            outputs = net(inputs) # computing softmax output
+            outputs = net(inputs)
 
             loss = criterion(outputs, targets)
 
