@@ -62,6 +62,7 @@ parser.add_argument('--mixup-alpha', type=float, default=0.2)
 parser.add_argument('--cutmix-alpha', type=float, default=1.)
 parser.add_argument('--eras', type=int, default=1)
 args = parser.parse_args()
+args.steps = 10 * (args.steps // 10)
 
 # deterministic mode for reproducibility
 random.seed(args.seed)
@@ -103,7 +104,7 @@ if args.dataset.lower() == "cifar10" or args.dataset.lower() == "cifar100":
     train = tvdset(
         root=args.dataset_path,
         train=True,
-        transform = transforms.Compose([
+        transform=transforms.Compose([
             transforms.RandomHorizontalFlip(),
             transforms.RandomCrop(32, padding=4),
             transforms.TrivialAugmentWide(),
@@ -115,23 +116,33 @@ if args.dataset.lower() == "cifar10" or args.dataset.lower() == "cifar100":
     test = tvdset(
         root=args.dataset_path,
         train=False,
-        transform = transforms.Compose([
+        transform=transforms.Compose([
             transforms.ToTensor(),
             normalize,
             transforms.Resize(args.cifar_resize, antialias=True)
         ]))
     large_input = False
-mixupcutmix = torchvision.transforms.RandomChoice([RandomMixup(num_classes, p=1.0, alpha=args.mixup_alpha), RandomCutmix(num_classes, p=1.0, alpha=args.cutmix_alpha)])
+
+
+mixupcutmix = torchvision.transforms.RandomChoice(
+    [RandomMixup(num_classes, p=1.0, alpha=args.mixup_alpha),
+     RandomCutmix(num_classes, p=1.0, alpha=args.cutmix_alpha)])
+
+
 def collate_fn(batch):
     return mixupcutmix(*default_collate(batch))
 
+
 train_loader = torch.utils.data.DataLoader(
-        train, batch_size=args.batch_size, shuffle=True,
-        num_workers=min(30, os.cpu_count()), drop_last=True, pin_memory=True, collate_fn=collate_fn, persistent_workers=True)
+    train, batch_size=args.batch_size, shuffle=True,
+    num_workers=min(30, os.cpu_count()), drop_last=True, pin_memory=True,
+    collate_fn=collate_fn, persistent_workers=True)
+
 
 test_loader = torch.utils.data.DataLoader(
-        test, batch_size=args.batch_size, shuffle=False,
-        num_workers=min(30, os.cpu_count()), pin_memory=True, persistent_workers=True)
+    test, batch_size=args.batch_size, shuffle=False,
+    num_workers=min(30, os.cpu_count()), pin_memory=True,
+    persistent_workers=True)
 
 # Prepare model, EMA and parameter sets
 net = eval(args.model)(num_classes, large_input, args.width)
@@ -161,12 +172,13 @@ for x in modules:
     elif isinstance(x, nn.Conv2d):
         wd.append(x.weight)
         trained_parameters += x.weight.numel()
-assert(num_parameters == trained_parameters)
+assert(num_parameters==trained_parameters)
 
 # define criterion and aggregators
 criterion = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
 train_losses, test_scores, test_scores_ema, test_card = [], [], [], []
 peak, peak_step, peak_ema, peak_step_ema = 0, 0, 0, 0
+
 
 # test function
 def test():
@@ -188,6 +200,7 @@ def test():
     net.train()
     return correct_ema/total
 
+
 start_time = 0
 epoch = 0
 
@@ -202,13 +215,20 @@ for era in range(1 if args.adam else 0, args.eras + 1):
 
     # define optimizers/schedulers
     if era == 0:
-        optimizer = torch.optim.SGD([{"params":wd, "weight_decay":2e-5}, {"params":nowd, "weight_decay":0}], lr=0.5, momentum=0.9, nesterov=True)
-        scheduler = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor = 0.01, total_iters = len(train_loader) * 5)
+        optimizer = torch.optim.SGD([{"params": wd, "weight_decay": 2e-5},
+                                     {"params": nowd, "weight_decay": 0}],
+                                    lr=0.5, momentum=0.9, nesterov=True)
+        scheduler = torch.optim.lr_scheduler.LinearLR(
+            optimizer, start_factor=0.01, total_iters=len(train_loader) * 5)
     else:
         if args.adam:
-            optimizer = torch.optim.AdamW([{"params":wd, "weight_decay":0.05}, {"params":nowd, "weight_decay":0}], lr = 1e-3 * (0.9 ** (era-1)))
+            optimizer = torch.optim.AdamW([{"params": wd, "weight_decay": 0.05},
+                                           {"params": nowd, "weight_decay": 0}],
+                                          lr = 1e-3 * (0.9 ** (era-1)))
         else:
-            optimizer = torch.optim.SGD([{"params":wd, "weight_decay":2e-5}, {"params":nowd, "weight_decay":0}], lr=0.5 * (0.9 ** (era-1)), momentum=0.9, nesterov=True)
+            optimizer = torch.optim.SGD([{"params": wd, "weight_decay": 2e-5},
+                                         {"params": nowd, "weight_decay": 0}],
+                                        lr=0.5 * (0.9 ** (era-1)), momentum=0.9, nesterov=True)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.steps - step)
     optimizer, scheduler = accelerator.prepare(optimizer, scheduler)
 
@@ -288,4 +308,3 @@ accelerator.print("total time is {:4d}h{:02d}m".format(int(total_time / 3600), (
 accelerator.print("Peak perf is {:6.2f}% at step {:d} ({:6.2f}% at step {:d})".format(peak, peak_step, peak_ema, peak_step_ema))
 accelerator.print()
 accelerator.print()
-
