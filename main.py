@@ -4,36 +4,26 @@
 CIFAR10
 accelerate launch --mixed_precision fp16 main.py --model $model --cifar-resize $size --batch-size 128 --seed 0
 model     |         32         |         52         |
-resnet20  | 98.05% ( 90% 2h30) | 
-resnet56  |
-resnet18  |
-resnet50  |
+resnet20  | 97.97% ( 90% 2h30) | 98.66% (100% 3h38) |
+resnet56  | 98.27% ( 90% 5h22) | 
+resnet18  | 97.77% (100% 2h28) | 
+resnet50  | 98.17% ( 90% 5h18) | 
+resnet20, width 16, 32x32: 94.65% 
+resnet56, width 16, 32x32: 96.76%
 
 CIFAR100
 accelerate launch --mixed_precision fp16 main.py --model $model --dataset cifar100 --cifar-resize $size --batch-size 128 --seed 0
 model     |         32         |         52         |
-resnet20  | 83.97% ( 90% 2h32) | 
-resnet56  |
-resnet18  |
-resnet50  |
+resnet20  | 83.69% ( 90% 2h32) | 83.88% ( 70% 3h42) | 
+resnet56  | 85.64% ( 70% 5h27) | 
+resnet18  | 82.96% ( 70% 2h16) |
+resnet50  | 84.81% ( 60% 5h39) |
+resnet20, width 16, 32x32: 71.83%
+resnet56, width 16, 32x32: 
 
 ImageNet
-accelerate launch --mixed_precision fp16 main.py --model $model --dataset imagenet --seed 0
-resnet18
-resnet50
-
-3h09 97.90% 52x52: accelerate launch --mixed_precision fp16 mainoptim.py --model resnet18 --batch-size 128 --cifar-resize 52 --seed 0
-2h12 97.40% 32x32: accelerate launch --mixed_precision fp16 mainoptim.py --model resnet18 --batch-size 128 --seed 0
-10h04 98.18% 52x52: accelerate launch --mixed_precision fp16 mainoptim.py --model resnet50 --batch-size 128 --cifar-resize 52 --seed 0
-5h17 97.92% 32x32 resnet50
-9h24 98.17% 52x52 resnet56
-5h09 98.13% 32x32 resnet56
-3h19 97.96% 52x52 resnet20
-2h18 97.73% 32x32 resnet20
-REDUCED
-94.55% 32x32 resnet20 width 16 272k params
-
-
+accelerate launch --mixed_precision fp16 main.py --model resnet18 --dataset imagenet --seed 0
+accelerate launch --mixed_precision fp16 main.py --model resnet50 --dataset imagenet --seed 0
 """
 
 import torch
@@ -70,6 +60,7 @@ parser.add_argument('--test-steps', type=int, default=15)
 parser.add_argument('--adam', action="store_true")
 parser.add_argument('--mixup-alpha', type=float, default=0.2)
 parser.add_argument('--cutmix-alpha', type=float, default=1.)
+parser.add_argument('--eras', type=int, default=1)
 args = parser.parse_args()
 
 random.seed(args.seed)
@@ -207,18 +198,20 @@ start_time = time.time()
 
 test_enum = list(test_loader)
 index_test = 0
-for era in range(1):
+for era in range(args.eras):
+    step = 0
+    print("era", era + 1)
     while step < args.steps:
         net.train()
         if epoch == 0 and not(args.adam):
-            optimizer = torch.optim.SGD([{"params":wd, "weight_decay":2e-5}, {"params":nowd, "weight_decay":0}], lr=0.5, momentum=0.9, nesterov=True)
+            optimizer = torch.optim.SGD([{"params":wd, "weight_decay":2e-5}, {"params":nowd, "weight_decay":0}], lr=0.5 * (0.9 ** era), momentum=0.9, nesterov=True)
             scheduler = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor = 0.01, total_iters = len(train_loader) * 5)
             optimizer, scheduler = accelerator.prepare(optimizer, scheduler)
         elif epoch == 5 or (epoch == 0 and args.adam):
             if args.adam:
-                optimizer = torch.optim.AdamW([{"params":wd, "weight_decay":0.05}, {"params":nowd, "weight_decay":0}])
+                optimizer = torch.optim.AdamW([{"params":wd, "weight_decay":0.05}, {"params":nowd, "weight_decay":0}], lr = 1e-3 * (0.9 ** era))
             else:
-                optimizer = torch.optim.SGD([{"params":wd, "weight_decay":2e-5}, {"params":nowd, "weight_decay":0}], lr=0.5, momentum=0.9, nesterov=True)
+                optimizer = torch.optim.SGD([{"params":wd, "weight_decay":2e-5}, {"params":nowd, "weight_decay":0}], lr=0.5 * (0.9 ** era), momentum=0.9, nesterov=True)
             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.steps - step)
             
             optimizer, scheduler = accelerator.prepare(optimizer, scheduler)
@@ -245,7 +238,7 @@ for era in range(1):
             lr = scheduler.get_last_lr()[0]
             accelerator.print("\r{:6.2f}% loss:{:.4e} lr:{:.3e}".format(100*step / args.steps, torch.mean(torch.tensor(train_losses)).item(), lr), end="")
             step_time = (time.time() - start_time) / (args.steps * era + step)
-            remaining_time = (args.steps - step) * step_time
+            remaining_time = (args.steps - step + (args.eras - era - 1) * args.steps) * step_time
             if accelerator.is_main_process:
                 score = 100 * accelerator.gather_for_metrics(torch.tensor(test_scores)).sum() / accelerator.gather_for_metrics(torch.tensor(test_card)).sum()
                 score_ema = 100 * accelerator.gather_for_metrics(torch.tensor(test_scores_ema)).sum() / accelerator.gather_for_metrics(torch.tensor(test_card)).sum()
@@ -255,10 +248,8 @@ for era in range(1):
                 if score_ema > peak_ema:
                     peak_ema = score_ema
                     peak_step_ema = step
-                accelerator.print(" {:6.2f}% (ema {:6.2f}%) {:4d}h{:02d}m {:d} epochs".format(score, score_ema, int(remaining_time / 3600), (int(remaining_time) % 3600) // 60, epoch), end='')
+                accelerator.print(" {:6.2f}% (ema {:6.2f}%) {:4d}h{:02d}m {:d} epochs".format(score, score_ema, int(remaining_time / 3600), (int(remaining_time) % 3600) // 60, epoch + 1), end='')
 
-            if step == args.steps:
-                break
             if batch_idx % args.test_steps == 0:
                 net.eval()
                 try:
@@ -282,9 +273,11 @@ for era in range(1):
                     test_scores_ema = test_scores_ema[-len(test_enum):]
                     test_card = test_card[-len(test_enum):]
                 net.train()
-            if (step+1) % (args.steps // 10) == 0 and step > 1:
+            if step % (args.steps // 10) == 0 and step > 1:
                 accelerator.print("\r{:3d}% steps score:                    ".format(round(100 * step / args.steps)), end='')
                 res = test()
+                if step == (10 * (args.steps // 10)):
+                    break
         epoch += 1
 
 total_time = time.time() - start_time
