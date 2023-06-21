@@ -188,7 +188,7 @@ def test():
     net.train()
     return correct_ema/total
 
-start_time = time.time()
+start_time = 0
 epoch = 0
 
 test_enum = list(test_loader)
@@ -213,6 +213,9 @@ for era in range(1 if args.adam else 0, args.eras + 1):
     optimizer, scheduler = accelerator.prepare(optimizer, scheduler)
 
     total_steps_for_era = args.steps if era > 0 else 5 * len(train_loader)
+
+    if start_time == 0:
+        start_time = time.time()
     
     while step < total_steps_for_era:
         for batch_idx, (inputs, targets) in enumerate(train_loader):
