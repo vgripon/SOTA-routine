@@ -4,7 +4,7 @@
 CIFAR10
 accelerate launch --mixed_precision fp16 main.py --model $model --cifar-resize $size --batch-size 128 --seed 0
 model     |         32         |         52         |
-resnet20  | 97.97% ( 90% 2h30) | 98.66% (100% 3h38) |
+resnet20  | 97.97% ( 90% 2h30) | 97.66% (100% 3h38) |
 resnet56  | 98.27% ( 90% 5h22) | 
 resnet18  | 97.77% (100% 2h28) | 
 resnet50  | 98.17% ( 90% 5h18) | 
@@ -15,7 +15,7 @@ CIFAR100
 accelerate launch --mixed_precision fp16 main.py --model $model --dataset cifar100 --cifar-resize $size --batch-size 128 --seed 0
 model     |         32         |         52         |
 resnet20  | 83.69% ( 90% 2h32) | 83.88% ( 70% 3h42) | 
-resnet56  | 85.64% ( 70% 5h27) | 
+resnet56  | 85.64% ( 70% 5h27) | 85.96% ( 70% 9h19) |
 resnet18  | 82.96% ( 70% 2h16) |
 resnet50  | 84.81% ( 60% 5h39) |
 resnet20, width 16, 32x32: 71.83%
