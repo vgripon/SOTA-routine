@@ -198,7 +198,7 @@ net.train()
 
 for era in range(1 if args.adam else 0, args.eras + 1):
     step = 0
-    print("{:s}".format("Era " + str(era + 1) if era > 0 else "Warming up"))
+    print("{:s}".format("Era " + str(era) if era > 0 else "Warming up"))
 
     # define optimizers/schedulers
     if era == 0:
@@ -206,9 +206,9 @@ for era in range(1 if args.adam else 0, args.eras + 1):
         scheduler = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor = 0.01, total_iters = len(train_loader) * 5)
     else:
         if args.adam:
-            optimizer = torch.optim.AdamW([{"params":wd, "weight_decay":0.05}, {"params":nowd, "weight_decay":0}], lr = 1e-3 * (0.9 ** era))
+            optimizer = torch.optim.AdamW([{"params":wd, "weight_decay":0.05}, {"params":nowd, "weight_decay":0}], lr = 1e-3 * (0.9 ** (era-1)))
         else:
-            optimizer = torch.optim.SGD([{"params":wd, "weight_decay":2e-5}, {"params":nowd, "weight_decay":0}], lr=0.5 * (0.9 ** era), momentum=0.9, nesterov=True)
+            optimizer = torch.optim.SGD([{"params":wd, "weight_decay":2e-5}, {"params":nowd, "weight_decay":0}], lr=0.5 * (0.9 ** (era-1)), momentum=0.9, nesterov=True)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.steps - step)
     optimizer, scheduler = accelerator.prepare(optimizer, scheduler)
 
