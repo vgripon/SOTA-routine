@@ -198,7 +198,7 @@ net.train()
 
 for era in range(1 if args.adam else 0, args.eras + 1):
     step = 0
-    print("{:s}".format(str(era + 1) if era > 0 else "Warming up"))
+    print("{:s}".format("Era " + str(era + 1) if era > 0 else "Warming up"))
 
     # define optimizers/schedulers
     if era == 0:
@@ -274,11 +274,9 @@ for era in range(1 if args.adam else 0, args.eras + 1):
                     test_scores_ema = test_scores_ema[-len(test_enum):]
                     test_card = test_card[-len(test_enum):]
                 net.train()
-            if step % (args.steps // 10) == 0 and step > 1:
-                accelerator.print("\r{:3d}% steps score:                    ".format(round(100 * step / args.steps)), end='')
+            if (era > 0 and (step % (args.steps // 10) == 0 or step == total_steps_for_era) and step > 1) or (era == 0 and step == total_steps_for_era):
+                accelerator.print("\r{:3d}% steps score:                    ".format(round(100 * step / total_steps_for_era)), end='')
                 res = test()
-                if step == (10 * (args.steps // 10)):
-                    break
         epoch += 1
 
 total_time = time.time() - start_time
