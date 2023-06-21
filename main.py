@@ -5,8 +5,8 @@ CIFAR10
 accelerate launch --mixed_precision fp16 main.py --model $model --cifar-resize $size --batch-size 128 --seed 0
 model     |         32         |         52         |
 resnet20  | 97.97% ( 90% 2h30) | 97.66% (100% 3h38) |
-resnet56  | 98.27% ( 90% 5h22) | 
-resnet18  | 97.77% (100% 2h28) | 
+resnet56  | 98.27% ( 90% 5h22) | 98.40% ( 90% 9h19) |
+resnet18  | 97.77% (100% 2h28) | 98.01% ( 90% 3h11) | 
 resnet50  | 98.17% ( 90% 5h18) | 
 resnet20, width 16, 32x32: 94.65% 
 resnet56, width 16, 32x32: 96.76%
@@ -16,10 +16,10 @@ accelerate launch --mixed_precision fp16 main.py --model $model --dataset cifar1
 model     |         32         |         52         |
 resnet20  | 83.69% ( 90% 2h32) | 83.88% ( 70% 3h42) | 
 resnet56  | 85.64% ( 70% 5h27) | 85.96% ( 70% 9h19) |
-resnet18  | 82.96% ( 70% 2h16) |
+resnet18  | 82.96% ( 70% 2h16) | 84.89% ( 80% 3h11) |
 resnet50  | 84.81% ( 60% 5h39) |
 resnet20, width 16, 32x32: 71.83%
-resnet56, width 16, 32x32: 
+resnet56, width 16, 32x32: 79.18%
 
 ImageNet
 accelerate launch --mixed_precision fp16 main.py --model resnet18 --dataset imagenet --seed 0
@@ -229,7 +229,7 @@ for era in range(1 if args.adam else 0, args.eras + 1):
             optimizer = torch.optim.SGD([{"params": wd, "weight_decay": 2e-5},
                                          {"params": nowd, "weight_decay": 0}],
                                         lr=0.5 * (0.9 ** (era-1)), momentum=0.9, nesterov=True)
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.steps - step)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.steps)
     optimizer, scheduler = accelerator.prepare(optimizer, scheduler)
 
     total_steps_for_era = args.steps if era > 0 else 5 * len(train_loader)
@@ -297,9 +297,11 @@ for era in range(1 if args.adam else 0, args.eras + 1):
                     test_scores_ema = test_scores_ema[-len(test_enum):]
                     test_card = test_card[-len(test_enum):]
                 net.train()
-            if (era > 0 and (step % (args.steps // 10) == 0 or step == total_steps_for_era) and step > 1) or (era == 0 and step == total_steps_for_era):
+            if (era > 0 and (step % (total_steps_for_era // 10) == 0 or step == total_steps_for_era) and step > 1) or (era == 0 and step == total_steps_for_era):
                 accelerator.print("\r{:3d}%:   loss:{:.4e} lr:{:.3e}".format(round(100 * step / total_steps_for_era), torch.mean(torch.tensor(train_losses)).item(), lr), end='')
                 res = test()
+                if step == total_steps_for_era:
+                    break
         epoch += 1
 
 total_time = time.time() - start_time
