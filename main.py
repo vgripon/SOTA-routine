@@ -261,7 +261,7 @@ for era in range(1 if args.adam else 0, args.eras + 1):
             accelerator.print("\r{:6.2f}% loss:{:.4e} lr:{:.3e}".format(100 * step / total_steps_for_era, torch.mean(torch.tensor(train_losses)).item(), lr), end="")
 
             step_time = (time.time() - start_time) / (args.steps * (era - 1 if era > 0 else 0) + step + (5 * len(train_loader) if not args.adam and era > 0 else 0))
-            remaining_time = (total_steps_for_era - step + (args.eras - era - 1) * args.steps) * step_time
+            remaining_time = (total_steps_for_era - step + (args.eras - era) * args.steps) * step_time
             
             if accelerator.is_main_process:
                 score = 100 * accelerator.gather_for_metrics(torch.tensor(test_scores)).sum() / accelerator.gather_for_metrics(torch.tensor(test_card)).sum()
