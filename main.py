@@ -278,7 +278,7 @@ for era in range(1 if args.adam else 0, args.eras + 1):
                     test_card = test_card[-len(test_enum):]
                 net.train()
             if (era > 0 and (step % (args.steps // 10) == 0 or step == total_steps_for_era) and step > 1) or (era == 0 and step == total_steps_for_era):
-                accelerator.print("\r{:3d}% steps: loss:{:.4e} lr:{:.3e}".format(round(100 * step / total_steps_for_era), torch.mean(torch.tensor(train_losses)).item(), lr), end='')
+                accelerator.print("\r{:3d}%:   loss:{:.4e} lr:{:.3e}".format(round(100 * step / total_steps_for_era), torch.mean(torch.tensor(train_losses)).item(), lr), end='')
                 res = test()
         epoch += 1
 
