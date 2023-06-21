@@ -237,7 +237,7 @@ for era in range(1 if args.adam else 0, args.eras + 1):
             lr = scheduler.get_last_lr()[0]
             accelerator.print("\r{:6.2f}% loss:{:.4e} lr:{:.3e}".format(100 * step / total_steps_for_era, torch.mean(torch.tensor(train_losses)).item(), lr), end="")
 
-            step_time = (time.time() - start_time) / (args.steps * (era-1) + step + (5 * len(train_loader) if not args.adam else 0))
+            step_time = (time.time() - start_time) / (args.steps * (era - 1 if era > 0 else 0) + step + (5 * len(train_loader) if not args.adam else 0))
             remaining_time = (total_steps_for_era - step + (args.eras - era - 1) * args.steps) * step_time
             
             if accelerator.is_main_process:
@@ -249,7 +249,7 @@ for era in range(1 if args.adam else 0, args.eras + 1):
                 if score_ema > peak_ema:
                     peak_ema = score_ema
                     peak_step_ema = step
-                accelerator.print(" {:6.2f}% (ema {:6.2f}%) {:4d}h{:02d}m {:d} epochs".format(score, score_ema, int(remaining_time / 3600), (int(remaining_time) % 3600) // 60, epoch + 1), end='')
+                accelerator.print(" {:6.2f}% (ema {:6.2f}%) {:4d}h{:02d}m {:4d} epochs".format(score, score_ema, int(remaining_time / 3600), (int(remaining_time) % 3600) // 60, epoch + 1), end='')
 
             if batch_idx % args.test_steps == 0:
                 net.eval()
