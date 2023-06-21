@@ -212,7 +212,7 @@ for era in range(1 if args.adam else 0, args.eras + 1):
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.steps - step)
     optimizer, scheduler = accelerator.prepare(optimizer, scheduler)
 
-    while step < args.steps:
+    while step < args.steps if era > 0 else 5*(len(train_loader) // args.batch_size):
         for batch_idx, (inputs, targets) in enumerate(train_loader):
             step += 1
             inputs, targets = inputs.to(non_blocking=True, memory_format=torch.channels_last), targets.to(non_blocking=True)
