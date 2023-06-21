@@ -249,7 +249,7 @@ for era in range(1 if args.adam else 0, args.eras + 1):
                 if score_ema > peak_ema:
                     peak_ema = score_ema
                     peak_step_ema = step
-                accelerator.print(" {:6.2f}% (ema {:6.2f}%) {:4d}h{:02d}m {:4d} epochs".format(score, score_ema, int(remaining_time / 3600), (int(remaining_time) % 3600) // 60, epoch + 1), end='')
+                accelerator.print(" {:6.2f}% (ema {:6.2f}%) {:4d}h{:02d}m epoch {:4d}".format(score, score_ema, int(remaining_time / 3600), (int(remaining_time) % 3600) // 60, epoch + 1), end='')
 
             if batch_idx % args.test_steps == 0:
                 net.eval()
