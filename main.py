@@ -62,6 +62,8 @@ parser.add_argument('--mixup-alpha', type=float, default=0.2)
 parser.add_argument('--cutmix-alpha', type=float, default=1.)
 parser.add_argument('--eras', type=int, default=1)
 parser.add_argument('--save-model', type=str, default="")
+parser.add_argument('--load-model', type=str, default="")
+parser.add_argument('--test-only', action="store_true")
 args = parser.parse_args()
 args.steps = 10 * (args.steps // 10)
 
@@ -147,6 +149,32 @@ test_loader = torch.utils.data.DataLoader(
 
 # Prepare model, EMA and parameter sets
 net = eval(args.model)(num_classes, large_input, args.width)
+new_size = False
+if args.load_model != "":
+    loaded_dict = torch.load(args.load_model, map_location="cpu")
+    current_dict = net.state_dict()
+    for key in loaded_dict.keys():
+        if current_dict[key].shape == loaded_dict[key].shape:
+            current_dict[key] = loaded_dict[key]
+        else:
+            new_size = True
+            cd = current_dict[key]
+            ld = loaded_dict[key]
+            if len(cd.shape) == 1:
+                cd = ld[:cd.shape[0]]
+            elif len(cd.shape) == 2:
+                cd = ld[:cd.shape[0], :cd.shape[1]]
+            elif len(cd.shape) == 3:
+                cd = ld[:cd.shape[0], :cd.shape[1], :cd.shape[2]]
+            elif len(cd.shape) == 4:
+                cd = ld[:cd.shape[0], :cd.shape[1], :cd.shape[2], :cd.shape[3]]
+            else:
+                print("Error in loading model!!!")
+                exit()
+    net.load_state_dict(current_dict)
+if new_size:
+    print("WARNING!!!! CHANGE OF SIZE WHEN LOADING MODEL!!!!")
+                
 net, train_loader, test_loader = accelerator.prepare(net, train_loader, test_loader)
 net.to(non_blocking=True, memory_format=torch.channels_last)
 num_parameters = int(torch.tensor([x.numel() for x in net.parameters()]).sum().item())
@@ -201,6 +229,10 @@ def test():
     net.train()
     return correct_ema/total
 
+
+if args.test_only:
+    test()
+    exit()
 
 start_time = 0
 epoch = 0
