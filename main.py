@@ -3,21 +3,21 @@
 """
 CIFAR10
 accelerate launch --mixed_precision fp16 main.py --model $model --cifar-resize $size --batch-size 128 --seed 0
-model     |         32         |         52         |
-resnet20  | 97.97% ( 90% 2h30) | 97.66% (100% 3h38) |
-resnet56  | 98.27% ( 90% 5h22) | 98.40% ( 90% 9h19) |
-resnet18  | 97.77% (100% 2h28) | 98.01% ( 90% 3h11) | 
-resnet50  | 98.17% ( 90% 5h18) | 
+model     |         32         |         52          |
+resnet20  | 97.97% ( 90% 2h30) | 97.66% (100%  3h38) |
+resnet56  | 98.27% ( 90% 5h22) | 98.40% ( 90%  9h19) |
+resnet18  | 97.77% (100% 2h28) | 98.01% ( 90%  3h11) | 
+resnet50  | 98.17% ( 90% 5h18) | 98.18% ( 90% 10h05) |
 resnet20, width 16, 32x32: 94.65% 
 resnet56, width 16, 32x32: 96.76%
 
 CIFAR100
 accelerate launch --mixed_precision fp16 main.py --model $model --dataset cifar100 --cifar-resize $size --batch-size 128 --seed 0
-model     |         32         |         52         |
-resnet20  | 83.69% ( 90% 2h32) | 83.88% ( 70% 3h42) | 
-resnet56  | 85.64% ( 70% 5h27) | 85.96% ( 70% 9h19) |
-resnet18  | 82.96% ( 70% 2h16) | 84.89% ( 80% 3h11) |
-resnet50  | 84.81% ( 60% 5h39) |
+model     |         32         |         52          |
+resnet20  | 83.69% ( 90% 2h32) | 83.88% ( 70% 3h42)  | 
+resnet56  | 85.64% ( 70% 5h27) | 85.96% ( 70% 9h19)  |
+resnet18  | 82.96% ( 70% 2h16) | 84.89% ( 80% 3h11)  |
+resnet50  | 84.81% ( 60% 5h39) | 85.20% ( 60% 10h08) |
 resnet20, width 16, 32x32: 71.83%
 resnet56, width 16, 32x32: 79.18%
 
