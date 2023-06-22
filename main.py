@@ -64,6 +64,7 @@ parser.add_argument('--eras', type=int, default=1)
 parser.add_argument('--save-model', type=str, default="")
 parser.add_argument('--load-model', type=str, default="")
 parser.add_argument('--test-only', action="store_true")
+parser.add_argument('--no-warmup', action="store_true")
 args = parser.parse_args()
 args.steps = 10 * (args.steps // 10)
 
@@ -242,7 +243,7 @@ index_test = 0
 
 net.train()
 
-for era in range(1 if args.adam else 0, args.eras + 1):
+for era in range(1 if args.adam or args.no_warmup else 0, args.eras + 1):
     step = 0
     print("{:s}".format("Era " + str(era) if era > 0 else "Warming up"))
 
