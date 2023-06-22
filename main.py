@@ -61,6 +61,7 @@ parser.add_argument('--adam', action="store_true")
 parser.add_argument('--mixup-alpha', type=float, default=0.2)
 parser.add_argument('--cutmix-alpha', type=float, default=1.)
 parser.add_argument('--eras', type=int, default=1)
+parser.add_argument('--save-model', type=str, default="")
 args = parser.parse_args()
 args.steps = 10 * (args.steps // 10)
 
@@ -310,3 +311,6 @@ accelerator.print("total time is {:4d}h{:02d}m".format(int(total_time / 3600), (
 accelerator.print("Peak perf is {:6.2f}% at step {:d} ({:6.2f}% at step {:d})".format(peak, peak_step, peak_ema, peak_step_ema))
 accelerator.print()
 accelerator.print()
+
+if args.save_model != "":
+    torch.save(net.state_dict(), args.save_model)
