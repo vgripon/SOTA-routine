@@ -94,7 +94,7 @@ if args.dataset.lower() == "imagenet":
         split="val",
         transform=transforms.Compose([
             transforms.ToTensor(),
-            transforms.Resize(236, antialias=True),
+            transforms.Resize(232, antialias=True),
             transforms.CenterCrop(224),
             normalize]))
     num_classes, large_input = 1000, True
