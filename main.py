@@ -58,6 +58,7 @@ parser.add_argument('--cifar-resize', type=int, default=32)
 parser.add_argument('--label-smoothing', type=float, default=0.1)
 parser.add_argument('--test-steps', type=int, default=15)
 parser.add_argument('--adam', action="store_true")
+parser.add_argument('--weight-decay', type=float, default=-1)
 parser.add_argument('--mixup-alpha', type=float, default=0.2)
 parser.add_argument('--cutmix-alpha', type=float, default=1.)
 parser.add_argument('--eras', type=int, default=1)
@@ -67,6 +68,8 @@ parser.add_argument('--test-only', action="store_true")
 parser.add_argument('--no-warmup', action="store_true")
 args = parser.parse_args()
 args.steps = 10 * (args.steps // 10)
+if args.weight_decay < 0:
+    args.weight_decay = 0.5 if args.adam else 2e-5
 
 # deterministic mode for reproducibility
 random.seed(args.seed)
@@ -249,18 +252,18 @@ for era in range(1 if args.adam or args.no_warmup else 0, args.eras + 1):
 
     # define optimizers/schedulers
     if era == 0:
-        optimizer = torch.optim.SGD([{"params": wd, "weight_decay": 2e-5},
+        optimizer = torch.optim.SGD([{"params": wd, "weight_decay": args.weight_decay},
                                      {"params": nowd, "weight_decay": 0}],
                                     lr=0.5, momentum=0.9, nesterov=True)
         scheduler = torch.optim.lr_scheduler.LinearLR(
             optimizer, start_factor=0.01, total_iters=len(train_loader) * 5)
     else:
         if args.adam:
-            optimizer = torch.optim.AdamW([{"params": wd, "weight_decay": 0.05},
+            optimizer = torch.optim.AdamW([{"params": wd, "weight_decay": args.weight_decay},
                                            {"params": nowd, "weight_decay": 0}],
                                           lr = 1e-3 * (0.9 ** (era-1)))
         else:
-            optimizer = torch.optim.SGD([{"params": wd, "weight_decay": 2e-5},
+            optimizer = torch.optim.SGD([{"params": wd, "weight_decay": args.weight_decay},
                                          {"params": nowd, "weight_decay": 0}],
                                         lr=0.5 * (0.9 ** (era-1)), momentum=0.9, nesterov=True)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.steps)
