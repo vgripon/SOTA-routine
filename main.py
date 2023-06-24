@@ -185,7 +185,8 @@ num_parameters = int(torch.tensor([x.numel() for x in net.parameters()]).sum().i
 accelerator.print("{:d} parameters".format(num_parameters))
 
 ema = ExponentialMovingAverage(net, decay=0.999)
-ema = accelerator.prepare(ema)
+#ema = accelerator.prepare(ema)
+ema.to(accelerator.device)
 ema.eval()
 
 modules = [x for x in net.modules()]
@@ -288,7 +289,7 @@ for era in range(1 if args.adam or args.no_warmup else 0, args.eras + 1):
             optimizer.step()
             if step % 32 == 0:
                 ema.update_parameters(net)
-                if epoch < 5:
+                if era == 0:
                     ema.n_averaged.fill_(0)
             train_losses.append(loss.item())
             train_losses = train_losses[-len(train_loader):]
@@ -301,8 +302,10 @@ for era in range(1 if args.adam or args.no_warmup else 0, args.eras + 1):
             remaining_time = (total_steps_for_era - step + (args.eras - era) * args.steps) * step_time
             
             if accelerator.is_main_process:
-                score = 100 * accelerator.gather_for_metrics(torch.tensor(test_scores)).sum() / accelerator.gather_for_metrics(torch.tensor(test_card)).sum()
-                score_ema = 100 * accelerator.gather_for_metrics(torch.tensor(test_scores_ema)).sum() / accelerator.gather_for_metrics(torch.tensor(test_card)).sum()
+                #score = 100 * accelerator.gather_for_metrics(torch.tensor(test_scores)).sum() / accelerator.gather_for_metrics(torch.tensor(test_card)).sum()
+                score = 100 * torch.tensor(test_scores).sum() / torch.tensor(test_card).sum()
+                #score_ema = 100 * accelerator.gather_for_metrics(torch.tensor(test_scores_ema)).sum() / accelerator.gather_for_metrics(torch.tensor(test_card)).sum()
+                score_ema = 100 * torch.tensor(test_scores_ema).sum() / torch.tensor(test_card).sum()
                 if score > peak:
                     peak = score
                     peak_step = step
