@@ -69,7 +69,7 @@ parser.add_argument('--no-warmup', action="store_true")
 args = parser.parse_args()
 args.steps = 10 * (args.steps // 10)
 if args.weight_decay < 0:
-    args.weight_decay = 0.5 if args.adam else 2e-5
+    args.weight_decay = 0.01 if args.adam else 2e-5
 
 # deterministic mode for reproducibility
 random.seed(args.seed)
