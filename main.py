@@ -256,7 +256,7 @@ for era in range(1 if args.adam or args.no_warmup else 0, args.eras + 1):
     if era == 0:
         optimizer = torch.optim.SGD([{"params": wd, "weight_decay": args.weight_decay},
                                      {"params": nowd, "weight_decay": 0}],
-                                    lr=0.5, momentum=0.9)#, nesterov=True)
+                                    lr=0.5, momentum=0.9, nesterov=True)
         scheduler = torch.optim.lr_scheduler.LinearLR(
             optimizer, start_factor=0.01, total_iters=len(train_loader) * 5)
     else:
@@ -267,7 +267,7 @@ for era in range(1 if args.adam or args.no_warmup else 0, args.eras + 1):
         else:
             optimizer = torch.optim.SGD([{"params": wd, "weight_decay": args.weight_decay},
                                          {"params": nowd, "weight_decay": 0}],
-                                        lr=0.5 * (0.9 ** (era-1)), momentum=0.9)#, nesterov=True)
+                                        lr=0.5 * (0.9 ** (era-1)), momentum=0.9, nesterov=True)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.steps)
     optimizer, scheduler = accelerator.prepare(optimizer, scheduler)
 
