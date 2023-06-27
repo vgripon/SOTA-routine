@@ -44,7 +44,7 @@ from resnet import *
 from utils import ExponentialMovingAverage, RandomMixup, RandomCutmix
 from torch.utils.data.dataloader import default_collate
 
-accelerator = Accelerator()
+accelerator = Accelerator(split_batches=True)
 
 parser = argparse.ArgumentParser(description="Vincent's Training Routine")
 parser.add_argument('--dataset', type=str, default="CIFAR10", help="CIFAR10, CIFAR100 or ImageNet")
@@ -180,7 +180,7 @@ if new_size:
     print("WARNING!!!! CHANGE OF SIZE WHEN LOADING MODEL!!!!")
                 
 net, train_loader, test_loader = accelerator.prepare(net, train_loader, test_loader)
-net.to(non_blocking=True, memory_format=torch.channels_last)
+#net.to(non_blocking=True, memory_format=torch.channels_last)
 num_parameters = int(torch.tensor([x.numel() for x in net.parameters()]).sum().item())
 accelerator.print("{:d} parameters".format(num_parameters))
 
@@ -222,7 +222,7 @@ def test():
     correct_ema = 0
     with torch.inference_mode():
         for batch_idx, (inputs, targets) in enumerate(test_loader):
-            inputs, targets = inputs.to(non_blocking=True, memory_format=torch.channels_last), targets.to(non_blocking=True)
+            #inputs, targets = inputs.to(non_blocking=True, memory_format=torch.channels_last), targets.to(non_blocking=True)
             outputs = net(inputs)
             outputs_ema = ema(inputs)
             _, predicted = outputs.max(1)
@@ -249,13 +249,14 @@ net.train()
 
 for era in range(1 if args.adam or args.no_warmup else 0, args.eras + 1):
     step = 0
-    print("{:s}".format("Era " + str(era) if era > 0 else "Warming up"))
+    if accelerator.is_main_process:
+        accelerator.print("{:s}".format("Era " + str(era) if era > 0 else "Warming up"))
 
     # define optimizers/schedulers
     if era == 0:
         optimizer = torch.optim.SGD([{"params": wd, "weight_decay": args.weight_decay},
                                      {"params": nowd, "weight_decay": 0}],
-                                    lr=0.5, momentum=0.9, nesterov=True)
+                                    lr=0.5, momentum=0.9)#, nesterov=True)
         scheduler = torch.optim.lr_scheduler.LinearLR(
             optimizer, start_factor=0.01, total_iters=len(train_loader) * 5)
     else:
@@ -266,7 +267,7 @@ for era in range(1 if args.adam or args.no_warmup else 0, args.eras + 1):
         else:
             optimizer = torch.optim.SGD([{"params": wd, "weight_decay": args.weight_decay},
                                          {"params": nowd, "weight_decay": 0}],
-                                        lr=0.5 * (0.9 ** (era-1)), momentum=0.9, nesterov=True)
+                                        lr=0.5 * (0.9 ** (era-1)), momentum=0.9)#, nesterov=True)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.steps)
     optimizer, scheduler = accelerator.prepare(optimizer, scheduler)
 
@@ -278,7 +279,7 @@ for era in range(1 if args.adam or args.no_warmup else 0, args.eras + 1):
     while step < total_steps_for_era:
         for batch_idx, (inputs, targets) in enumerate(train_loader):
             step += 1
-            inputs, targets = inputs.to(non_blocking=True, memory_format=torch.channels_last), targets.to(non_blocking=True)
+            #inputs, targets = inputs.to(non_blocking=True, memory_format=torch.channels_last), targets.to(non_blocking=True)
 
             optimizer.zero_grad(set_to_none=True)
             outputs = net(inputs)
@@ -322,7 +323,7 @@ for era in range(1 if args.adam or args.no_warmup else 0, args.eras + 1):
                 except StopIteration:
                     test_enum = enumerate(test_loader)
                     _, (inputs, targets) = next(test_enum)
-                inputs, targets = inputs.to(non_blocking=True, memory_format=torch.channels_last), targets.to(non_blocking=True)
+                #inputs, targets = inputs.to(non_blocking=True, memory_format=torch.channels_last), targets.to(non_blocking=True)
                 with torch.inference_mode():
                     outputs = net(inputs)
                     outputs_ema = ema(inputs)
