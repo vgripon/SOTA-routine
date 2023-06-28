@@ -57,7 +57,6 @@ parser.add_argument('--width', type=int, default=64, help="number of feature map
 parser.add_argument('--dataset-path', type=str, default=os.getenv("DATASETS"))
 parser.add_argument('--cifar-resize', type=int, default=32)
 parser.add_argument('--label-smoothing', type=float, default=0.1)
-parser.add_argument('--test-steps', type=int, default=15)
 parser.add_argument('--adam', action="store_true")
 parser.add_argument('--eta-min', type=float, default=0)
 parser.add_argument('--weight-decay', type=float, default=-1)
@@ -78,7 +77,8 @@ random.seed(args.seed)
 torch.manual_seed(args.seed)
 np.random.seed(args.seed)
 torch.use_deterministic_algorithms(True)
-print("random seed is", args.seed)
+if accelerator.is_main_process:
+    accelerator.print("Random seed:", args.seed)
 
 # prepare dataloaders
 normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
@@ -184,11 +184,11 @@ if new_size:
     print("WARNING!!!! CHANGE OF SIZE WHEN LOADING MODEL!!!!")
 
 summ = summary(net, input_size = input_size, verbose=0)
-print("Total mult-adds:", summ.total_mult_adds)
+print("Total mult-adds: {:d} ({:,})".format(summ.total_mult_adds, summ.total_mult_adds))
 net, train_loader, test_loader = accelerator.prepare(net, train_loader, test_loader)
 #net.to(non_blocking=True, memory_format=torch.channels_last)
 num_parameters = int(torch.tensor([x.numel() for x in net.parameters()]).sum().item())
-accelerator.print("{:d} parameters".format(num_parameters))
+accelerator.print("Params: {:d} ({:,})".format(num_parameters, num_parameters))
 
 ema = ExponentialMovingAverage(net, decay=0.999)
 #ema = accelerator.prepare(ema)
@@ -216,7 +216,7 @@ assert(num_parameters==trained_parameters)
 
 # define criterion and aggregators
 criterion = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
-train_losses, test_scores, test_scores_ema, test_card = [], [], [], []
+train_losses = []
 peak, peak_step, peak_ema, peak_step_ema = 0, 0, 0, 0
 
 
@@ -236,9 +236,9 @@ def test():
             total += targets.size(0)
             correct += predicted.eq(targets).sum()
             correct_ema += predicted_ema.eq(targets).sum()
-    accelerator.print("{:6.2f}% (ema: {:6.2f}%)".format(100.*correct/total, 100.*correct_ema/total))
+    accelerator.print("{:6.2f}% (ema: {:6.2f}%)".format(100.*correct/total, 100.*correct_ema/total), end='')
     net.train()
-    return correct_ema/total
+    return correct/total, correct_ema/total
 
 
 if args.test_only:
@@ -247,12 +247,10 @@ if args.test_only:
 
 start_time = 0
 epoch = 0
-
-test_enum = list(test_loader)
-index_test = 0
+target, idx_target = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0], 0
 
 net.train()
-
+last_print = 0
 for era in range(1 if args.adam or args.no_warmup else 0, args.eras + 1):
     step = 0
     if accelerator.is_main_process:
@@ -298,63 +296,38 @@ for era in range(1 if args.adam or args.no_warmup else 0, args.eras + 1):
                 ema.update_parameters(net)
                 if era == 0:
                     ema.n_averaged.fill_(0)
+
             train_losses.append(loss.item())
             train_losses = train_losses[-len(train_loader):]
 
             scheduler.step()
             lr = scheduler.get_last_lr()[0]
-            accelerator.print("\r{:6.2f}% loss:{:.4e} lr:{:.3e}".format(100 * step / total_steps_for_era, torch.mean(torch.tensor(train_losses)).item(), lr), end="")
+
+            if time.time() - last_print > 0.1 or batch_idx + 1 == len(train_loader):
+                accelerator.print("\r{:6.2f}% loss:{:.4e} lr:{:.3e}".format(100 * step / total_steps_for_era, torch.mean(torch.tensor(train_losses)).item(), lr), end="")
+                last_print = time.time()
 
             step_time = (time.time() - start_time) / (args.steps * (era - 1 if era > 0 else 0) + step + (5 * len(train_loader) if not args.adam and era > 0 else 0))
             remaining_time = (total_steps_for_era - step + (args.eras - era) * args.steps) * step_time
             
-            if accelerator.is_main_process:
-                #score = 100 * accelerator.gather_for_metrics(torch.tensor(test_scores)).sum() / accelerator.gather_for_metrics(torch.tensor(test_card)).sum()
-                score = 100 * torch.tensor(test_scores).sum() / torch.tensor(test_card).sum()
-                #score_ema = 100 * accelerator.gather_for_metrics(torch.tensor(test_scores_ema)).sum() / accelerator.gather_for_metrics(torch.tensor(test_card)).sum()
-                score_ema = 100 * torch.tensor(test_scores_ema).sum() / torch.tensor(test_card).sum()
-                if score > peak:
-                    peak = score
-                    peak_step = step
-                if score_ema > peak_ema:
-                    peak_ema = score_ema
-                    peak_step_ema = step
-                accelerator.print("{:6.2f}% (ema: {:6.2f}%) {:4d}h{:02d}m epoch {:4d}".format(score, score_ema, int(remaining_time / 3600), (int(remaining_time) % 3600) // 60, epoch + 1), end='')
-
-            if batch_idx % args.test_steps == 0:
-                net.eval()
-                try:
-                    inputs, targets = test_enum[index_test]
-                    index_test = (index_test + 1) % len(test_enum)
-                except StopIteration:
-                    test_enum = enumerate(test_loader)
-                    _, (inputs, targets) = next(test_enum)
-                #inputs, targets = inputs.to(non_blocking=True, memory_format=torch.channels_last), targets.to(non_blocking=True)
-                with torch.inference_mode():
-                    outputs = net(inputs)
-                    outputs_ema = ema(inputs)
-                    _, predicted = outputs.max(1)
-                    _, predicted_ema = outputs_ema.max(1)
-                    correct = predicted.eq(targets).sum()
-                    correct_ema = predicted_ema.eq(targets).sum()                    
-                    test_scores.append(correct.item())
-                    test_scores_ema.append(correct_ema.item())
-                    test_card.append(inputs.shape[0])
-                    test_scores = test_scores[-len(test_enum):]
-                    test_scores_ema = test_scores_ema[-len(test_enum):]
-                    test_card = test_card[-len(test_enum):]
-                net.train()
-            if (era > 0 and (step % (total_steps_for_era // 10) == 0 or step == total_steps_for_era) and step > 1) or (era == 0 and step == total_steps_for_era):
-                accelerator.print("\r{:3d}%:   loss:{:.4e} lr:{:.3e}".format(round(100 * step / total_steps_for_era), torch.mean(torch.tensor(train_losses)).item(), lr), end='')
-                res = test()
-                if step == total_steps_for_era:
-                    break
+        score, score_ema = test()
+        if 100 * score > peak:
+            peak = 100 * score
+            peak_step = epoch
+        if 100 * score_ema > peak_ema:
+            peak_ema = 100 * score_ema
+            peak_step_ema = epoch
+        accelerator.print(" {:4d}h{:02d}m epoch {:4d}".format(int(remaining_time / 3600), (int(remaining_time) % 3600) // 60, epoch + 1), end='')
         epoch += 1
+        if (era == 0 and step >= total_steps_for_era) or (era > 0 and step / total_steps_for_era > target[idx_target]):
+            accelerator.print()
+            if era > 0:
+                idx_target += 1
 
 total_time = time.time() - start_time
 accelerator.print()
 accelerator.print("total time is {:4d}h{:02d}m".format(int(total_time / 3600), (int(total_time) % 3600) // 60))
-accelerator.print("Peak perf is {:6.2f}% at step {:d} ({:6.2f}% at step {:d})".format(peak, peak_step, peak_ema, peak_step_ema))
+accelerator.print("Peak perf is {:6.2f}% at epoch {:d} ({:6.2f}% at epoch {:d})".format(peak, peak_step, peak_ema, peak_step_ema))
 accelerator.print()
 accelerator.print()
 
