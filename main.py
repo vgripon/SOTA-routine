@@ -38,7 +38,7 @@ import time
 import math
 import numpy as np
 from accelerate import Accelerator
-
+from torchinfo import summary
 from resnet import *
 
 from utils import ExponentialMovingAverage, RandomMixup, RandomCutmix
@@ -100,7 +100,7 @@ if args.dataset.lower() == "imagenet":
             transforms.Resize(232, antialias=True),
             transforms.CenterCrop(224),
             normalize]))
-    num_classes, large_input = 1000, True
+    num_classes, large_input, input_size = 1000, True, (1, 3, 224, 224)
 if args.dataset.lower() == "cifar10" or args.dataset.lower() == "cifar100":
     if args.dataset.lower() == "cifar10":
         tvdset = torchvision.datasets.CIFAR10
@@ -129,6 +129,7 @@ if args.dataset.lower() == "cifar10" or args.dataset.lower() == "cifar100":
             transforms.Resize(args.cifar_resize, antialias=True)
         ]))
     large_input = False
+    input_size = (1, 3, args.cifar_resize, args.cifar_resize)
 
 
 mixupcutmix = torchvision.transforms.RandomChoice(
@@ -153,6 +154,9 @@ test_loader = torch.utils.data.DataLoader(
 
 # Prepare model, EMA and parameter sets
 net = eval(args.model)(num_classes, large_input, args.width)
+summ = summary(net, input_size = input_size, verbose=0)
+print("Total mult-adds:", summ.total_mult_adds)
+
 new_size = False
 if args.load_model != "":
     loaded_dict = torch.load(args.load_model, map_location="cpu")
