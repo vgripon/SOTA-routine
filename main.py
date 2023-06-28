@@ -22,8 +22,9 @@ resnet20, width 16, 32x32: 71.83%
 resnet56, width 16, 32x32: 79.18%
 
 ImageNet
-accelerate launch --mixed_precision fp16 main.py --model resnet18 --dataset imagenet --seed 0
-accelerate launch --mixed_precision fp16 main.py --model resnet50 --dataset imagenet --seed 0
+accelerate launch --gpu_ids 0,1,2,3 --multi_gpu --num_processes 4 --mixed_precision fp16 main.py --model resnet18 --dataset imagenet --seed 0 : 
+accelerate launch --gpu_ids 0,1,2,3 --multi_gpu --num_processes 4 --mixed_precision fp16 main.py --model resnet50 --dataset imagenet --seed 0 : 80.77% (90% 29h24)
+(Peak perf is  80.65% at step 716885 ( 80.83% at step 671288))
 """
 
 import torch
@@ -58,6 +59,7 @@ parser.add_argument('--cifar-resize', type=int, default=32)
 parser.add_argument('--label-smoothing', type=float, default=0.1)
 parser.add_argument('--test-steps', type=int, default=15)
 parser.add_argument('--adam', action="store_true")
+parser.add_argument('--eta-min', type=float, default=0)
 parser.add_argument('--weight-decay', type=float, default=-1)
 parser.add_argument('--mixup-alpha', type=float, default=0.2)
 parser.add_argument('--cutmix-alpha', type=float, default=1.)
@@ -154,14 +156,12 @@ test_loader = torch.utils.data.DataLoader(
 
 # Prepare model, EMA and parameter sets
 net = eval(args.model)(num_classes, large_input, args.width)
-summ = summary(net, input_size = input_size, verbose=0)
-print("Total mult-adds:", summ.total_mult_adds)
 
 new_size = False
 if args.load_model != "":
     loaded_dict = torch.load(args.load_model, map_location="cpu")
     current_dict = net.state_dict()
-    for key in loaded_dict.keys():
+    for key in current_dict.keys():
         if current_dict[key].shape == loaded_dict[key].shape:
             current_dict[key] = loaded_dict[key]
         else:
@@ -182,7 +182,9 @@ if args.load_model != "":
     net.load_state_dict(current_dict)
 if new_size:
     print("WARNING!!!! CHANGE OF SIZE WHEN LOADING MODEL!!!!")
-                
+
+summ = summary(net, input_size = input_size, verbose=0)
+print("Total mult-adds:", summ.total_mult_adds)
 net, train_loader, test_loader = accelerator.prepare(net, train_loader, test_loader)
 #net.to(non_blocking=True, memory_format=torch.channels_last)
 num_parameters = int(torch.tensor([x.numel() for x in net.parameters()]).sum().item())
@@ -272,7 +274,7 @@ for era in range(1 if args.adam or args.no_warmup else 0, args.eras + 1):
             optimizer = torch.optim.SGD([{"params": wd, "weight_decay": args.weight_decay},
                                          {"params": nowd, "weight_decay": 0}],
                                         lr=0.5 * (0.9 ** (era-1)), momentum=0.9)#, nesterov=True)
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.steps)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.steps, args.eta_min)
     optimizer, scheduler = accelerator.prepare(optimizer, scheduler)
 
     total_steps_for_era = args.steps if era > 0 else 5 * len(train_loader)
@@ -292,7 +294,7 @@ for era in range(1 if args.adam or args.no_warmup else 0, args.eras + 1):
 
             accelerator.backward(loss)
             optimizer.step()
-            if step % 32 == 0:
+            if step % 35 == 0: ### 35 instead of 32??? let us try out :o
                 ema.update_parameters(net)
                 if era == 0:
                     ema.n_averaged.fill_(0)
@@ -358,3 +360,4 @@ accelerator.print()
 
 if args.save_model != "":
     torch.save(net.state_dict(), args.save_model)
+    torch.save(ema.module.state_dict(), "ema" + args.save_model)
