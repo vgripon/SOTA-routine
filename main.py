@@ -70,7 +70,7 @@ parser.add_argument('--no-warmup', action="store_true")
 args = parser.parse_args()
 args.steps = 10 * (args.steps // 10)
 if args.weight_decay < 0:
-    args.weight_decay = 0.01 if args.adam else 2e-5
+    args.weight_decay = 0.05 if args.adam else 2e-5
 
 # deterministic mode for reproducibility
 random.seed(args.seed)
@@ -303,7 +303,7 @@ for era in range(1 if args.adam or args.no_warmup else 0, args.eras + 1):
             scheduler.step()
             lr = scheduler.get_last_lr()[0]
 
-            if time.time() - last_print > 0.1 or batch_idx + 1 == len(train_loader):
+            if time.time() - last_print > 0.05 or batch_idx + 1 == len(train_loader):
                 accelerator.print("\r{:6.2f}% loss:{:.4e} lr:{:.3e}".format(100 * step / total_steps_for_era, torch.mean(torch.tensor(train_losses)).item(), lr), end="")
                 last_print = time.time()
 
