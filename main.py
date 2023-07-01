@@ -74,7 +74,7 @@ if args.weight_decay < 0:
     args.weight_decay = 0.05 if args.adam else 2e-5
 
 # deterministic mode for reproducibility
-if args.seed > 0:
+if args.seed >= 0:
     random.seed(args.seed)
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
