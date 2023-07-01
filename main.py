@@ -51,7 +51,7 @@ parser = argparse.ArgumentParser(description="Vincent's Training Routine")
 parser.add_argument('--dataset', type=str, default="CIFAR10", help="CIFAR10, CIFAR100 or ImageNet")
 parser.add_argument('--steps', type=int, default=750000)
 parser.add_argument('--batch-size', type = int, default=1024)
-parser.add_argument('--seed', type = int, default = random.randint(0, 1000000000))
+parser.add_argument('--seed', type = int, default=-1)
 parser.add_argument('--model', type=str, default="resnet50")
 parser.add_argument('--width', type=int, default=64, help="number of feature maps for first layers")
 parser.add_argument('--dataset-path', type=str, default=os.getenv("DATASETS"))
@@ -74,12 +74,13 @@ if args.weight_decay < 0:
     args.weight_decay = 0.05 if args.adam else 2e-5
 
 # deterministic mode for reproducibility
-random.seed(args.seed)
-torch.manual_seed(args.seed)
-np.random.seed(args.seed)
-torch.use_deterministic_algorithms(True)
-if accelerator.is_main_process:
-    accelerator.print("Random seed:", args.seed)
+if args.seed > 0:
+    random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+    torch.use_deterministic_algorithms(True)
+    if accelerator.is_main_process:
+        accelerator.print("Random seed:", args.seed)
 
 # prepare dataloaders
 normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
@@ -184,8 +185,9 @@ if args.load_model != "":
 if new_size:
     print("WARNING!!!! CHANGE OF SIZE WHEN LOADING MODEL!!!!")
 
-summ = summary(net, input_size = input_size, verbose=0)
-print("Total mult-adds: {:d} ({:,})".format(summ.total_mult_adds, summ.total_mult_adds))
+if accelerator.is_main_process:
+    summ = summary(net, input_size = input_size, verbose=0)
+    accelerator.print("Total mult-adds: {:d} ({:,})".format(summ.total_mult_adds, summ.total_mult_adds))
 net, train_loader, test_loader = accelerator.prepare(net, train_loader, test_loader)
 #net.to(non_blocking=True, memory_format=torch.channels_last)
 num_parameters = int(torch.tensor([x.numel() for x in net.parameters()]).sum().item())
@@ -253,7 +255,7 @@ target, idx_target = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0], 0
 net.train()
 last_print = 0
 for era in range(1 if args.adam or args.no_warmup else 0, args.eras + 1):
-    step = 0
+    step, idx_target = 0, 0
     if accelerator.is_main_process:
         accelerator.print("{:s}".format("Era " + str(era) if era > 0 else "Warming up"))
 
@@ -335,3 +337,4 @@ accelerator.print()
 if args.save_model != "":
     torch.save(net.state_dict(), args.save_model)
     torch.save(ema.module.state_dict(), "ema" + args.save_model)
+
