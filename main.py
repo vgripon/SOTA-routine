@@ -286,7 +286,6 @@ for era in range(1 if args.adam or args.no_warmup else 0, args.eras + 1):
     while step < total_steps_for_era:
         for batch_idx, (inputs, targets) in enumerate(train_loader):
             step += 1
-            #inputs, targets = inputs.to(non_blocking=True, memory_format=torch.channels_last), targets.to(non_blocking=True)
 
             optimizer.zero_grad(set_to_none=True)
             outputs = net(inputs)
@@ -295,7 +294,7 @@ for era in range(1 if args.adam or args.no_warmup else 0, args.eras + 1):
 
             accelerator.backward(loss)
             optimizer.step()
-            if step % 35 == 0: ### 35 instead of 32??? let us try out :o
+            if step % 32 == 0:
                 ema.update_parameters(net)
                 if era == 0:
                     ema.n_averaged.fill_(0)
@@ -317,9 +316,13 @@ for era in range(1 if args.adam or args.no_warmup else 0, args.eras + 1):
         if 100 * score > peak:
             peak = 100 * score
             peak_step = epoch
+            if args.save_model != "":
+                torch.save(net.state_dict(), args.save_model + "_best.pt")
         if 100 * score_ema > peak_ema:
             peak_ema = 100 * score_ema
             peak_step_ema = epoch
+            if args.save_model != "":
+                torch.save(ema.module.state_dict(), args.save_model + "_best_ema.pt")
         accelerator.print(" {:4d}h{:02d}m epoch {:4d}".format(int(remaining_time / 3600), (int(remaining_time) % 3600) // 60, epoch + 1), end='')
         epoch += 1
         if (era == 0 and step >= total_steps_for_era) or (era > 0 and step / total_steps_for_era > target[idx_target]):
@@ -335,6 +338,6 @@ accelerator.print()
 accelerator.print()
 
 if args.save_model != "":
-    torch.save(net.state_dict(), args.save_model)
-    torch.save(ema.module.state_dict(), "ema" + args.save_model)
+    torch.save(net.state_dict(), args.save_model + ".pt")
+    torch.save(ema.module.state_dict(), args.save_model + "_ema.pt")
 
