@@ -5,15 +5,15 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
-def Conv3x3(in_planes, out_planes, stride=1, groups=1, dilation=1):
-    return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride, padding=dilation, groups=groups, bias=False, dilation=dilation)
+def Conv3x3(in_planes, out_planes, stride=1, groups=1):
+    return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride, padding=stride, groups=groups, bias=False)
 
 def conv1x1(in_planes: int, out_planes: int, stride: int = 1):
     return nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=stride, bias=False)
 
 class BasicBlock(nn.Module):
     expansion: int = 1
-    def __init__(self, inplanes: int, planes: int, stride: int = 1, downsample: Optional[nn.Module] = None, base_width: int = 64, dilation: int = 1):
+    def __init__(self, inplanes: int, planes: int, stride: int = 1, downsample: Optional[nn.Module] = None):
         super().__init__()
         self.conv1 = Conv3x3(inplanes, planes, stride)
         self.bn1 = nn.BatchNorm2d(planes)
@@ -42,13 +42,11 @@ class BasicBlock(nn.Module):
 
 class Bottleneck(nn.Module):
     expansion: int = 4
-    def __init__(self, inplanes, planes, stride, downsample: Optional[nn.Module] = None, base_width = 64, dilation = 1):
+    def __init__(self, inplanes, width, stride, downsample: Optional[nn.Module] = None):
         super().__init__()
-        #width = int(planes * (base_width / 64.0))
-        width = planes
         self.conv1 = conv1x1(inplanes, width)
         self.bn1 = nn.BatchNorm2d(width)
-        self.conv2 = Conv3x3(width, width, stride, dilation)
+        self.conv2 = Conv3x3(width, width, stride)
         self.bn2 = nn.BatchNorm2d(width)
         self.conv3 = conv1x1(width, planes * self.expansion)
         self.bn3 = nn.BatchNorm2d(planes * self.expansion)
@@ -82,9 +80,7 @@ class ResNet(nn.Module):
     def __init__(self, block, layers, num_classes, large_input, width, zero_init_residual=False):
         super().__init__()
         self.inplanes = width
-        self.dilation = 1
-        replace_stride_with_dilation = [False, False, False]
-        self.base_width = width
+
         if large_input:
             self.embed = nn.Sequential(
                 nn.Conv2d(3, self.inplanes, kernel_size=7, stride=2, padding=3, bias=False),
@@ -97,17 +93,13 @@ class ResNet(nn.Module):
                 nn.BatchNorm2d(self.inplanes),
                 nn.ReLU(inplace=True)
             )
-        
-        self.layer1 = self._make_layer(block, width, layers[0], stride=1)
-        self.layer2 = self._make_layer(block, width*2, layers[1], stride=2, dilate=replace_stride_with_dilation[0])
-        self.layer3 = self._make_layer(block, width*4, layers[2], stride=2, dilate=replace_stride_with_dilation[1])
-        if len(layers) > 3:            
-            self.layer4 = self._make_layer(block, width*8, layers[3], stride=2, dilate=replace_stride_with_dilation[2])
-            self.fc = nn.Linear(width*8 * block.expansion, num_classes)
-        else:
-            self.layer4 = nn.Identity()
-            self.fc = nn.Linear(width*4 * block.expansion, num_classes)
-        #self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+
+        layers_list = []
+        for depth, stride, multiplier in layers:
+            layers_list.append(self.make_layer(block, width * multiplier, depth, stride=stride))
+        self.layers = nn.ModuleList(layers_list)
+
+        self.fc = nn.Linear(self.in_planes, num_classes)
         
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -126,12 +118,8 @@ class ResNet(nn.Module):
                 elif isinstance(m, BasicBlock) and m.bn2.weight is not None:
                     nn.init.constant_(m.bn2.weight, 0)  # type: ignore[arg-type]
 
-    def _make_layer(self, block, planes, blocks, stride = 1, dilate = False):
+    def _make_layer(self, block, planes, blocks, stride = 1):
         downsample = None
-        previous_dilation = self.dilation
-        if dilate:
-            self.dilation *= stride
-            stride = 1
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
                 conv1x1(self.inplanes, planes * block.expansion, stride),
@@ -141,7 +129,7 @@ class ResNet(nn.Module):
         layers = []
         layers.append(
             block(
-                self.inplanes, planes, stride, downsample, self.base_width, previous_dilation
+                self.inplanes, planes, stride, downsample
             )
         )
         self.inplanes = planes * block.expansion
@@ -151,8 +139,6 @@ class ResNet(nn.Module):
                     self.inplanes,
                     planes,
                     stride = 1,
-                    base_width=self.base_width,
-                    dilation=self.dilation
                 )
             )
 
@@ -173,7 +159,7 @@ class ResNet(nn.Module):
         return x
 
 def resnet18(num_classes, large_input, width):
-    return ResNet(BasicBlock, [2, 2, 2, 2], num_classes, large_input, width)
+    return ResNet(BasicBlock, [(2, 1, 1), (2, 2, 2), (2, 2, 4), (2, 2, 8)], num_classes, large_input, width)
 
 def resnet34(num_classes, large_input, width):
     return ResNet(BasicBlock, [3, 4, 6, 3], num_classes, large_input, width)
