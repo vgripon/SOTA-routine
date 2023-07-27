@@ -188,3 +188,6 @@ def resnet110(num_classes, large_input, width):
 
 def resnet1202(num_classes, large_input, width):
     return ResNet(BasicBlock, [(200, 1, 1), (200, 2, 2), (200, 2, 4)], num_classes, large_input, width)
+
+def resnettest(num_classes, large_input, width):
+    return ResNet(Bottleneck, [(3, 1, 1), (4, 2, 1), (6, 2, 2), (6, 2, 4), (4, 2, 8), (3, 2, 16)], num_classes, False, width)
