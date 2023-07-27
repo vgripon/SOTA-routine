@@ -42,13 +42,13 @@ class BasicBlock(nn.Module):
 
 class Bottleneck(nn.Module):
     expansion: int = 4
-    def __init__(self, inplanes, width, stride, downsample: Optional[nn.Module] = None):
+    def __init__(self, inplanes, planes, stride, downsample: Optional[nn.Module] = None):
         super().__init__()
-        self.conv1 = conv1x1(inplanes, width)
-        self.bn1 = nn.BatchNorm2d(width)
-        self.conv2 = Conv3x3(width, width, stride)
-        self.bn2 = nn.BatchNorm2d(width)
-        self.conv3 = conv1x1(width, planes * self.expansion)
+        self.conv1 = conv1x1(inplanes, planes)
+        self.bn1 = nn.BatchNorm2d(planes)
+        self.conv2 = Conv3x3(planes, planes, stride)
+        self.bn2 = nn.BatchNorm2d(planes)
+        self.conv3 = conv1x1(planes, planes * self.expansion)
         self.bn3 = nn.BatchNorm2d(planes * self.expansion)
         self.relu = nn.ReLU(inplace=True)
         self.downsample = downsample
@@ -156,38 +156,35 @@ class ResNet(nn.Module):
 
         return x
 
-def resnet3(num_classes, large_input, width):
-    return ResNet(BasicBlock, [(1, 1, 1)], num_classes, large_input, width)
-    
 def resnet18(num_classes, large_input, width):
     return ResNet(BasicBlock, [(2, 1, 1), (2, 2, 2), (2, 2, 4), (2, 2, 8)], num_classes, large_input, width)
 
 def resnet34(num_classes, large_input, width):
-    return ResNet(BasicBlock, [3, 4, 6, 3], num_classes, large_input, width)
+    return ResNet(BasicBlock, [(3, 1, 1), (4, 2, 2), (6, 2, 4), (3, 2, 8)], num_classes, large_input, width)
 
 def resnet50(num_classes, large_input, width):
-    return ResNet(Bottleneck, [3, 4, 6, 3], num_classes, large_input, width)
+    return ResNet(Bottleneck, [(3, 1, 1), (4, 2, 2), (6, 2, 4), (3, 2, 8)], num_classes, large_input, width)
 
 def resnet101(num_classes, large_input, width):
-    return ResNet(Bottleneck, [3, 4, 23, 3], num_classes, large_input, width)
+    return ResNet(Bottleneck, [(3, 1, 1), (4, 2, 2), (23, 2, 4), (3, 2, 8)], num_classes, large_input, width)
 
 def resnet152(num_classes, large_input, width):
-    return ResNet(Bottleneck, [3, 8, 36, 3], num_classes, large_input, width)
+    return ResNet(Bottleneck, [(3, 1, 1), (8, 2, 2), (36, 2, 4), (3, 2, 8)], num_classes, large_input, width)
 
 def resnet20(num_classes, large_input, width):
-    return ResNet(BasicBlock, [3, 3, 3], num_classes, large_input, width)
+    return ResNet(BasicBlock, [(3, 1, 1), (3, 2, 2), (3, 2, 4)], num_classes, large_input, width)
 
 def resnet32(num_classes, large_input, width):
-    return ResNet(BasicBlock, [5, 5, 5], num_classes, large_input, width)
+    return ResNet(BasicBlock, [(5, 1, 1), (5, 2, 2), (5, 2, 4)], num_classes, large_input, width)
 
 def resnet44(num_classes, large_input, width):
-    return ResNet(BasicBlock, [7, 7, 7], num_classes, large_input, width)
+    return ResNet(BasicBlock, [(7, 1, 1), (7, 2, 2), (7, 2, 4)], num_classes, large_input, width)
 
 def resnet56(num_classes, large_input, width):
-    return ResNet(BasicBlock, [9, 9, 9], num_classes, large_input, width)
+    return ResNet(BasicBlock, [(9, 1, 1), (9, 2, 2), (9, 2, 4)], num_classes, large_input, width)
 
 def resnet110(num_classes, large_input, width):
-    return ResNet(BasicBlock, [18, 18, 18], num_classes, large_input, width)
+    return ResNet(BasicBlock, [(18, 1, 1), (18, 2, 2), (18, 2, 4)], num_classes, large_input, width)
 
 def resnet1202(num_classes, large_input, width):
-    return ResNet(BasicBlock, [200, 200, 200], num_classes, large_input, width)
+    return ResNet(BasicBlock, [(200, 1, 1), (200, 2, 2), (200, 2, 4)], num_classes, large_input, width)
