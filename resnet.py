@@ -119,12 +119,13 @@ class ResNet(nn.Module):
                     nn.init.constant_(m.bn2.weight, 0)  # type: ignore[arg-type]
 
     def _make_layer(self, block, planes, blocks, stride = 1):
-        downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
                 conv1x1(self.inplanes, planes * block.expansion, stride),
                 nn.BatchNorm2d(planes * block.expansion),
             )
+        else:
+            downsample = None
 
         layers = []
         layers.append(
@@ -155,6 +156,9 @@ class ResNet(nn.Module):
 
         return x
 
+def resnet3(num_classes, large_input, width):
+    return ResNet(BasicBlock, [(1, 1, 1)], num_classes, large_input, width)
+    
 def resnet18(num_classes, large_input, width):
     return ResNet(BasicBlock, [(2, 1, 1), (2, 2, 2), (2, 2, 4), (2, 2, 8)], num_classes, large_input, width)
 
