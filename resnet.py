@@ -96,8 +96,8 @@ class ResNet(nn.Module):
 
         layers_list = []
         for depth, stride, multiplier in layers:
-            layers_list.append(self.make_layer(block, width * multiplier, depth, stride=stride))
-        self.layers = nn.ModuleList(layers_list)
+            layers_list.append(self._make_layer(block, width * multiplier, depth, stride=stride))
+        self.layers = nn.Sequential(*layers_list)
 
         self.fc = nn.Linear(self.in_planes, num_classes)
         
@@ -147,10 +147,7 @@ class ResNet(nn.Module):
     def forward(self, x):
         x = self.embed(x)
 
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
+        x = self.layers(x)
 
         x = x.mean(-1).mean(-1)
         x = torch.flatten(x, 1)
