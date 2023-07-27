@@ -99,7 +99,7 @@ class ResNet(nn.Module):
             layers_list.append(self._make_layer(block, width * multiplier, depth, stride=stride))
         self.layers = nn.Sequential(*layers_list)
 
-        self.fc = nn.Linear(self.in_planes, num_classes)
+        self.fc = nn.Linear(self.inplanes, num_classes)
         
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
