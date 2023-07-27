@@ -162,6 +162,8 @@ net = eval(args.model)(num_classes, large_input, args.width)
 new_size = False
 if args.load_model != "":
     loaded_dict = torch.load(args.load_model, map_location="cpu")
+    if list(loaded_dict.keys())[0][:6] == "module":
+        loaded_dict = {k.replace("module.",""):v for k,v in loaded_dict}
     current_dict = net.state_dict()
     for key in current_dict.keys():
         if current_dict[key].shape == loaded_dict[key].shape:
