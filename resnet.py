@@ -44,7 +44,8 @@ class Bottleneck(nn.Module):
     expansion: int = 4
     def __init__(self, inplanes, planes, stride, downsample: Optional[nn.Module] = None, base_width = 64, dilation = 1):
         super().__init__()
-        width = int(planes * (base_width / 64.0))
+        #width = int(planes * (base_width / 64.0))
+        width = planes
         self.conv1 = conv1x1(inplanes, width)
         self.bn1 = nn.BatchNorm2d(width)
         self.conv2 = Conv3x3(width, width, stride, dilation)
