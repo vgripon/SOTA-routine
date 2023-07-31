@@ -56,6 +56,7 @@ parser.add_argument('--model', type=str, default="resnet50")
 parser.add_argument('--width', type=int, default=64, help="number of feature maps for first layers")
 parser.add_argument('--dataset-path', type=str, default=os.getenv("DATASETS"))
 parser.add_argument('--cifar-resize', type=int, default=32)
+parser.add_argument('--imagenet-resize', type=int, default=224)
 parser.add_argument('--label-smoothing', type=float, default=0.1)
 parser.add_argument('--adam', action="store_true")
 parser.add_argument('--eta-min', type=float, default=0)
@@ -89,7 +90,7 @@ if args.dataset.lower() == "imagenet":
         root=args.dataset_path,
         split="train",
         transform=transforms.Compose([
-            transforms.RandomResizedCrop(176, antialias=True),
+            transforms.RandomResizedCrop(int(176/224 * args.imagenet_resize), antialias=True),
             transforms.RandomHorizontalFlip(),
             torchvision.transforms.TrivialAugmentWide(),
             transforms.ToTensor(),
@@ -101,10 +102,10 @@ if args.dataset.lower() == "imagenet":
         split="val",
         transform=transforms.Compose([
             transforms.ToTensor(),
-            transforms.Resize(232, antialias=True),
-            transforms.CenterCrop(224),
+            transforms.Resize(int(232/224 * args.imagenet_resize), antialias=True),
+            transforms.CenterCrop(args.imagenet_resize),
             normalize]))
-    num_classes, large_input, input_size = 1000, True, (1, 3, 224, 224)
+    num_classes, input_size = 1000, (1, 3, 224, 224)
 if args.dataset.lower() == "cifar10" or args.dataset.lower() == "cifar100":
     if args.dataset.lower() == "cifar10":
         tvdset = torchvision.datasets.CIFAR10
@@ -132,7 +133,6 @@ if args.dataset.lower() == "cifar10" or args.dataset.lower() == "cifar100":
             normalize,
             transforms.Resize(args.cifar_resize, antialias=True)
         ]))
-    large_input = False
     input_size = (1, 3, args.cifar_resize, args.cifar_resize)
 
 
@@ -157,6 +157,9 @@ test_loader = torch.utils.data.DataLoader(
     persistent_workers=True)
 
 # Prepare model, EMA and parameter sets
+large_input = "_large" in args.model
+if large_input:
+    args.model = args.model.replace("_large", "")
 net = eval(args.model)(num_classes, large_input, args.width)
 
 new_size = False
@@ -191,7 +194,7 @@ if accelerator.is_main_process:
     summ = summary(net, input_size = input_size, verbose=0)
     accelerator.print("Total mult-adds: {:d} ({:,})".format(summ.total_mult_adds, summ.total_mult_adds))
 net, train_loader, test_loader = accelerator.prepare(net, train_loader, test_loader)
-#net.to(non_blocking=True, memory_format=torch.channels_last)
+
 num_parameters = int(torch.tensor([x.numel() for x in net.parameters()]).sum().item())
 accelerator.print("Params: {:d} ({:,})".format(num_parameters, num_parameters))
 
